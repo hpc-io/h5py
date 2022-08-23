@@ -173,6 +173,7 @@ cdef extern from "hdf5.h":
     int H5F_LIBVER_LATEST  # Use the latest possible format available for storing objects
 
 # === H5FD - Low-level file descriptor API ====================================
+  int H5FD_CLASS_VERSION # 0x01
 
   ctypedef enum H5FD_mem_t:
     H5FD_MEM_NOLIST    = -1,
@@ -237,6 +238,7 @@ cdef extern from "hdf5.h":
 
   # Class information for each file driver
   ctypedef struct H5FD_class_t:
+    unsigned version;
     const char *name
     haddr_t maxaddr
     H5F_close_degree_t fc_degree

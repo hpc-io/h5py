@@ -269,7 +269,69 @@ def make_fid(name, mode, userblock_size, fapl, fcpl=None, swmr=False):
 
     return fid
 
+def make_fid_async(name, mode, userblock_size, fapl, fcpl=None, swmr=False, es_id=0):
+    """ Get a new FileID by opening or creating a file.
+    Also validates mode argument."""
 
+    if userblock_size is not None:
+        if mode in ('r', 'r+'):
+            raise ValueError("User block may only be specified "
+                             "when creating a file")
+        try:
+            userblock_size = int(userblock_size)
+        except (TypeError, ValueError):
+            raise ValueError("User block size must be an integer")
+        if fcpl is None:
+            fcpl = h5p.create(h5p.FILE_CREATE)
+        fcpl.set_userblock(userblock_size)
+
+    if mode == 'r':
+        flags = h5f.ACC_RDONLY
+        if swmr and swmr_support:
+            flags |= h5f.ACC_SWMR_READ
+        fid = h5f.open_async(name, flags, fapl=fapl, es_id=es_id)
+    elif mode == 'r+':
+        fid = h5f.open_async(name, h5f.ACC_RDWR, fapl=fapl, es_id=es_id)
+    elif mode in ['w-', 'x']:
+        fid = h5f.create_async(name, h5f.ACC_EXCL, fapl=fapl, fcpl=fcpl, es_id=es_id)
+    elif mode == 'w':
+        fid = h5f.create_async(name, h5f.ACC_TRUNC, fapl=fapl, fcpl=fcpl, es_id=es_id)
+    elif mode == 'a':
+        # Open in append mode (read/write).
+        # If that fails, create a new file only if it won't clobber an
+        # existing one (ACC_EXCL)
+        try:
+            fid = h5f.open_async(name, h5f.ACC_RDWR, fapl=fapl, es_id=es_id)
+        # Not all drivers raise FileNotFoundError (commented those that do not)
+        except FileNotFoundError if fapl.get_driver() in (
+            h5fd.SEC2,
+            h5fd.DIRECT if direct_vfd else -1,
+            # h5fd.STDIO,
+            # h5fd.CORE,
+            h5fd.FAMILY,
+            h5fd.WINDOWS,
+            # h5fd.MPIO,
+            # h5fd.MPIPOSIX,
+            h5fd.fileobj_driver,
+            h5fd.ROS3D if ros3 else -1,
+        ) else OSError:
+            fid = h5f.create_async(name, h5f.ACC_EXCL, fapl=fapl, fcpl=fcpl, es_id=es_id)
+    else:
+        raise ValueError("Invalid mode; must be one of r, r+, w, w-, x, a")
+
+    try:
+        if userblock_size is not None:
+            existing_fcpl = fid.get_create_plist()
+            if existing_fcpl.get_userblock() != userblock_size:
+                raise ValueError("Requested userblock size (%d) does not match that of existing file (%d)" % (userblock_size, existing_fcpl.get_userblock()))
+    except Exception as e:
+        fid.close()
+        raise e
+
+    return fid
+
+
+	
 class File(Group):
 
     """
@@ -282,8 +344,18 @@ class File(Group):
         # hdf5 complains that a file identifier is an invalid location for an
         # attribute. Instead of self, pass the root group to AttributeManager:
         from . import attrs
+        self.es_id=None
         with phil:
             return attrs.AttributeManager(self['/'])
+
+    @property
+    def attrs_async(self):
+        """ Attributes attached to this object """
+        # hdf5 complains that a file identifier is an invalid location for an
+        # attribute. Instead of self, pass the root group to AttributeManager:
+        from . import attrs
+        with phil:
+            return attrs.AttributeManager(self['/'], es_id=self.es_id)
 
     @property
     @with_phil
@@ -376,7 +448,7 @@ class File(Group):
                  rdcc_nslots=None, rdcc_nbytes=None, rdcc_w0=None, track_order=None,
                  fs_strategy=None, fs_persist=False, fs_threshold=1, fs_page_size=None,
                  page_buf_size=None, min_meta_keep=0, min_raw_keep=0, locking=None,
-                 alignment_threshold=1, alignment_interval=1, meta_block_size=None, **kwds):
+                 alignment_threshold=1, alignment_interval=1, meta_block_size=None, es=None, **kwds):
         """Create a new file object.
 
         See the h5py user guide for a detailed explanation of the options.
@@ -536,7 +608,7 @@ class File(Group):
                     "mode, set f.swmr_mode = True after opening the file.",
                     stacklevel=2,
                 )
-
+            
             with phil:
                 fapl = make_fapl(driver, libver, rdcc_nslots, rdcc_nbytes, rdcc_w0,
                                  locking, page_buf_size, min_meta_keep, min_raw_keep,
@@ -547,14 +619,17 @@ class File(Group):
                 fcpl = make_fcpl(track_order=track_order, fs_strategy=fs_strategy,
                                  fs_persist=fs_persist, fs_threshold=fs_threshold,
                                  fs_page_size=fs_page_size)
-                fid = make_fid(name, mode, userblock_size, fapl, fcpl, swmr=swmr)
+                if es is None:
+                    fid = make_fid(name, mode, userblock_size, fapl, fcpl, swmr=swmr)
+                else:
+                    fid = make_fid_async(name, mode, userblock_size, fapl, fcpl, swmr=swmr, es_id=es.es_id)
 
             if isinstance(libver, tuple):
                 self._libver = libver
             else:
                 self._libver = (libver, 'latest')
 
-        super().__init__(fid)
+        super().__init__(fid, es)
 
     def close(self):
         """ Close the file.  All open objects become invalid """
@@ -570,12 +645,30 @@ class File(Group):
 
                 self.id.close()
                 _objects.nonlocal_close()
+                
+    def close_async(self, es_id=None):
+        if es_id is None:
+            es_id=self.es_id
+        
+        self.id.close_async(es_id.es_id)
+        #import sys
+        #es_id.wait(sys.maxsize)
+        
 
     def flush(self):
         """ Tell the HDF5 library to flush its buffers.
         """
         with phil:
             h5f.flush(self.id)
+    
+    def flush_async(self, es_id=None):
+        """ Tell the HDF5 library to flush its buffers.
+        """
+        if es_id is None:
+            h5f.flush_async(self.id, es_id=self.es_id.es_id)
+        else:
+            with phil:
+                h5f.flush_async(self.id, es_id=es_id.es_id)
 
     @with_phil
     def __enter__(self):
@@ -599,3 +692,8 @@ class File(Group):
             r = f'<HDF5 file "{os.path.basename(filename)}" (mode {self.mode})>'
 
         return r
+
+class File_async(File):
+    pass
+
+

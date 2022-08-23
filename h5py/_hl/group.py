@@ -31,12 +31,13 @@ class Group(HLObject, MutableMappingHDF5):
     """ Represents an HDF5 group.
     """
 
-    def __init__(self, bind):
+    def __init__(self, bind, es_id=None):
         """ Create a new Group object by binding to a low-level GroupID.
         """
         with phil:
             if not isinstance(bind, h5g.GroupID):
                 raise ValueError("%s is not a GroupID" % bind)
+            self.es_id=es_id
             super().__init__(bind)
 
 
@@ -47,7 +48,7 @@ class Group(HLObject, MutableMappingHDF5):
         h5p.CRT_ORDER_TRACKED | h5p.CRT_ORDER_INDEXED)
 
 
-    def create_group(self, name, track_order=None):
+    def create_group(self, name, track_order=None, es=None):
         """ Create and return a new subgroup.
 
         Name may be absolute or relative.  Fails if the target name already
@@ -63,8 +64,40 @@ class Group(HLObject, MutableMappingHDF5):
         with phil:
             name, lcpl = self._e(name, lcpl=True)
             gcpl = Group._gcpl_crt_order if track_order else None
-            gid = h5g.create(self.id, name, lcpl=lcpl, gcpl=gcpl)
+            if es is None:
+                gid = h5g.create(self.id, name, lcpl=lcpl, gcpl=gcpl)
+            else:
+                gid = h5g.create_async(self.id, name, lcpl=lcpl, gcpl=gcpl, es_id=es.es_id)
+            
             return Group(gid)
+
+	#IF HDF5_VERSION >= (1, 13, 0): 
+    def create_group_async(self, name, track_order=None, es=None):
+        """ Create and return a new subgroup.
+
+        Name may be absolute or relative.  Fails if the target name already
+        exists.
+
+        track_order
+        Track dataset/group/attribute creation order under this group
+        if True. If None use global default h5.get_config().track_order.
+        """
+        if (self.es_id is not None) and (es is None):
+            es=self.es_id
+
+        if track_order is None:
+            track_order = h5.get_config().track_order
+        
+        if es is None:
+            esid = 0
+        else:
+            esid = es.es_id
+            self.es_id=es
+        with phil:
+            name, lcpl = self._e(name, lcpl=True)
+            gcpl = Group._gcpl_crt_order if track_order else None
+            gid = h5g.create_async(self.id, name, lcpl=lcpl, gcpl=gcpl, es_id=esid)
+            return Group(gid, es)
 
     def create_dataset(self, name, shape=None, dtype=None, data=None, **kwds):
         """ Create a new HDF5 dataset
@@ -161,7 +194,30 @@ class Group(HLObject, MutableMappingHDF5):
             dsid = dataset.make_new_dset(group, shape, dtype, data, name, **kwds)
             dset = dataset.Dataset(dsid)
             return dset
+	#IF HDF5_VERSION >= (1, 13, 0):
+    def create_dataset_async(self, name, shape=None, dtype=None, data=None, es=None, **kwds):
+        if (self.es_id is not None) and (es is None):
+            es=self.es_id
+        if 'track_order' not in kwds:
+            kwds['track_order'] = h5.get_config().track_order
 
+        if 'efile_prefix' in kwds:
+            kwds['efile_prefix'] = self._e(kwds['efile_prefix'])
+
+        if 'virtual_prefix' in kwds:
+            kwds['virtual_prefix'] = self._e(kwds['virtual_prefix'])
+        with phil:
+            group = self
+            if name:
+                name = self._e(name)
+                if b'/' in name.lstrip(b'/'):
+                    parent_path, name = name.rsplit(b'/', 1)
+                    group = self.require_group(parent_path)
+            dsid = dataset.make_new_dset(group, shape, dtype, data, name, es_id=es, **kwds)
+            dset = dataset.Dataset(dsid, es_id=es)
+            return dset
+		 
+		 
     if vds_support:
         def create_virtual_dataset(self, name, layout, fillvalue=None):
             """Create a new virtual dataset in this group.
@@ -223,7 +279,7 @@ class Group(HLObject, MutableMappingHDF5):
 
             self.create_virtual_dataset(name, layout, fillvalue)
 
-    def require_dataset(self, name, shape, dtype, exact=False, **kwds):
+    def require_dataset(self, name, shape, dtype, exact=False, es_id=None, **kwds):
         """ Open a dataset, creating it if it doesn't exist.
 
         If keyword "exact" is False (default), an existing dataset must have
@@ -253,7 +309,10 @@ class Group(HLObject, MutableMappingHDF5):
                 shape = (shape,)
 
             try:
-                dsid = dataset.open_dset(self, self._e(name), **kwds)
+                if self.es_id is None:
+                    dsid = dataset.open_dset(self, self._e(name), **kwds)
+                else:
+                    dsid = dataset.open_dset_async(self, self._e(name), es_id=self.es_id.es_id, **kwds)
                 dset = dataset.Dataset(dsid)
             except KeyError:
                 dset = self[name]
@@ -307,7 +366,7 @@ class Group(HLObject, MutableMappingHDF5):
 
         return self.create_dataset(name, **kwupdate)
 
-    def require_group(self, name):
+    def require_group(self, name, es_id = None):
         # TODO: support kwargs like require_dataset
         """Return a group, creating it if it doesn't exist.
 
@@ -316,7 +375,10 @@ class Group(HLObject, MutableMappingHDF5):
         """
         with phil:
             if not name in self:
-                return self.create_group(name)
+                if es_id is None:
+                    return self.create_group(name)
+                else:
+                    return self.create_group_async(name, es=es_id)
             grp = self[name]
             if not isinstance(grp, Group):
                 raise TypeError("Incompatible object (%s) already exists" % grp.__class__.__name__)
@@ -331,7 +393,10 @@ class Group(HLObject, MutableMappingHDF5):
             if oid is None:
                 raise ValueError("Invalid HDF5 object reference")
         elif isinstance(name, (bytes, str)):
-            oid = h5o.open(self.id, self._e(name), lapl=self._lapl)
+            if self.es_id is None:
+                oid = h5o.open(self.id, self._e(name), lapl=self._lapl)
+            else:
+                oid = h5o.open_async(self.id, self._e(name), lapl=self._lapl, es_id=self.es_id.es_id)
         else:
             raise TypeError("Accessing a group is done with bytes or str, "
                             " not {}".format(type(name)))

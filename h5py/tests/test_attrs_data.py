@@ -260,3 +260,85 @@ class TestWriteException(BaseAttrs):
 
         with self.assertRaises(KeyError):
             self.f.attrs['x']
+            
+            
+         
+@ut.skipUnless(h5py.version.hdf5_version_tuple >= (1, 13, 0), 'HDF5 1.13.0 required')
+class TestAsync(BaseAttrs):
+    def setUp(self):
+        pass
+    def tearDown(self):
+        pass
+               
+    def test_read(self):
+        from h5py import Eventset
+        es_id = Eventset()
+        import sys
+        wait_forever = sys.maxsize
+        self.f = File(self.mktemp(), 'w', es=es_id)
+        self.f.attrs_async["x"]=2
+        self.assertEqual(2, self.f.attrs_async['x'])
+        
+        if self.f:
+            self.f.close()
+            es_id.wait(wait_forever)
+            self.assertEqual(es_id.num_in_progress, 0)
+            self.assertEqual(es_id.op_failed, False)
+        if es_id:
+            es_id.close()
+    def test_write(self):
+        from h5py import Eventset
+        es_id = Eventset()
+        import sys
+        wait_forever = sys.maxsize
+        self.f = File(self.mktemp(), 'w', es=es_id)
+        
+        self.f.attrs_async["y"] = 2
+        
+        es_id.wait(wait_forever)
+        self.assertEqual(es_id.num_in_progress, 0)
+        self.assertEqual(es_id.op_failed, False)
+        self.assertEqual(2, self.f.attrs_async["y"])
+        
+        if self.f:
+            self.f.close()
+            es_id.wait(wait_forever)
+            self.assertEqual(es_id.num_in_progress, 0)
+            self.assertEqual(es_id.op_failed, False)
+        if es_id:
+            es_id.close()
+    def test_modify(self):
+        from h5py import Eventset
+        es_id = Eventset()
+        import sys
+        wait_forever = sys.maxsize
+        self.f = File(self.mktemp(), 'w', es=es_id)
+        self.f.attrs_async["x"]=1
+        es_id.wait(wait_forever)
+        self.assertEqual(es_id.num_in_progress, 0)
+        self.assertEqual(es_id.op_failed, False)
+        self.assertEqual(1, self.f.attrs_async["x"])
+        
+        self.f.attrs_async.modify("x", 2)
+        es_id.wait(wait_forever)
+        self.assertEqual(es_id.num_in_progress, 0)
+        self.assertEqual(es_id.op_failed, False)
+        self.assertEqual(2, self.f.attrs_async["x"])
+            
+        if self.f:
+            self.f.close_async()
+            es_id.wait(wait_forever)
+            self.assertEqual(es_id.num_in_progress, 0)
+            self.assertEqual(es_id.op_failed, False)
+        if es_id:
+            es_id.close()          
+           
+            
+            
+            
+            
+            
+            
+            
+            
+            

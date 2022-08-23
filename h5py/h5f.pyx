@@ -105,6 +105,23 @@ def open(char* name, unsigned int flags=H5F_ACC_RDWR, PropFAID fapl=None):
     """
     return FileID(H5Fopen(name, flags, pdefault(fapl)))
 
+IF HDF5_VERSION >= (1, 13, 0):
+    @with_phil
+    def open_async(char* name, unsigned int flags=H5F_ACC_RDWR, PropFAID fapl=None, hid_t es_id=0):
+        """(STRING name, UINT flags=ACC_RDWR, PropFAID fapl=None) => FileID
+
+        Open an existing HDF5 file.  Keyword "flags" may be:
+
+        ACC_RDWR
+            Open in read-write mode
+
+        ACC_RDONLY
+            Open in readonly mode
+
+        Keyword fapl may be a file access property list.
+        """
+        print('Using h5py with async HDF5 to open a file')
+        return FileID(H5Fopen_async(name, flags, pdefault(fapl), es_id))
 
 @with_phil
 def create(char* name, int flags=H5F_ACC_TRUNC, PropFCID fcpl=None,
@@ -124,6 +141,16 @@ def create(char* name, int flags=H5F_ACC_TRUNC, PropFCID fcpl=None,
     the default is ACC_TRUNC.  Be careful!
     """
     return FileID(H5Fcreate(name, flags, pdefault(fcpl), pdefault(fapl)))
+
+IF HDF5_VERSION >= (1, 13, 0):
+    @with_phil
+    def create_async(char* name, int flags=H5F_ACC_TRUNC, PropFCID fcpl=None,
+                                                PropFAID fapl=None, hid_t es_id=0):
+        """
+        Async version of create
+        """
+        print('Using h5py with async HDF5 to create a file')
+        return FileID(H5Fcreate_async(name, flags, pdefault(fcpl), pdefault(fapl), es_id))
 
 IF HDF5_VERSION >= (1, 8, 9):
     @with_phil
@@ -162,6 +189,24 @@ def flush(ObjectID obj not None, int scope=H5F_SCOPE_LOCAL):
         Flush the entire virtual file
     """
     H5Fflush(obj.id, <H5F_scope_t>scope)
+
+IF HDF5_VERSION >= (1, 13, 0):
+    @with_phil
+    def flush_async(ObjectID obj not None, int scope=H5F_SCOPE_LOCAL, hid_t es_id=0):
+        """(ObjectID obj, INT scope=SCOPE_LOCAL)
+
+        Tell the HDF5 library to flush file buffers to disk.  "obj" may
+        be the file identifier, or the identifier of any object residing in
+        the file.  Keyword "scope" may be:
+
+        SCOPE_LOCAL
+            Flush only the given file
+
+        SCOPE_GLOBAL
+            Flush the entire virtual file
+        """
+        print("Using h5py with async HDF5 to flush a file")
+        H5Fflush_async(obj.id, <H5F_scope_t>scope, es_id)
 
 
 @with_phil
@@ -321,7 +366,8 @@ cdef class FileID(GroupID):
         * Hashable: Yes, unique to the file (but not the access mode)
         * Equality: Hash comparison
     """
-
+    
+                
     property name:
         """ File name on disk (according to h5f.get_name()) """
         def __get__(self):
@@ -340,6 +386,14 @@ cdef class FileID(GroupID):
         """
         self._close()
         _objects.nonlocal_close()
+        
+    @with_phil
+    def close_async(self, hid_t es_id=0):
+        """
+        calls H5Fclose_async
+        """
+        print("Using H5Fclose_async")
+        H5Fclose_async(self.id, es_id)
 
     @with_phil
     def _close_open_objects(self, int types):
@@ -370,7 +424,15 @@ cdef class FileID(GroupID):
         a mounted file.
         """
         return FileID(H5Freopen(self.id))
-
+    
+    @with_phil
+    def reopen_async(self, hid_t es_id=0):
+        """
+        async verison of reopen
+        """
+        print("Using h5py with async HDF5 to reopen a file")
+        return FileID(H5Freopen_async(self.id, es_id))
+    
 
     @with_phil
     def get_filesize(self):

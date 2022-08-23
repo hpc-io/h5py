@@ -44,17 +44,21 @@ class AttributeManager(base.MutableMappingHDF5, base.CommonStateObject):
         shape, use create().
     """
 
-    def __init__(self, parent):
+    def __init__(self, parent, es_id=None):
         """ Private constructor.
         """
+        self.es_id = es_id
         self._id = parent.id
 
     @with_phil
     def __getitem__(self, name):
         """ Read the value of an attribute.
         """
-        attr = h5a.open(self._id, self._e(name))
-
+        if self.es_id is None:
+            attr = h5a.open(self._id, self._e(name))
+        else:
+            attr = h5a.open_async(self._id, self._e(name), es_id=self.es_id.es_id)
+            
         if is_empty_dataspace(attr):
             return Empty(attr.dtype)
 
@@ -74,7 +78,7 @@ class AttributeManager(base.MutableMappingHDF5, base.CommonStateObject):
             dtype = subdtype                # 'f'
 
         arr = numpy.zeros(shape, dtype=dtype, order='C')
-        attr.read(arr, mtype=htype)
+        attr.read(arr, mtype=htype, es_id=self.es_id)
 
         string_info = h5t.check_string_dtype(dtype)
         if string_info and (string_info.length is None):
@@ -90,7 +94,10 @@ class AttributeManager(base.MutableMappingHDF5, base.CommonStateObject):
     def get_id(self, name):
         """Get a low-level AttrID object for the named attribute.
         """
-        return h5a.open(self._id, self._e(name))
+        if self.es_id is None:
+            return h5a.open(self._id, self._e(name))
+        else:
+            return h5a.open_async(self._id, self._e(name), es_id=self.es_id.es_id)
 
     @with_phil
     def __setitem__(self, name, value):
@@ -196,21 +203,31 @@ class AttributeManager(base.MutableMappingHDF5, base.CommonStateObject):
             # attributes with subsequent rename, doing that would trigger
             # the error discussed in the above issue
             attr_exists = False
-            if h5a.exists(self._id, self._e(name)):
-                attr_exists = True
-                tempname = uuid.uuid4().hex
+            if self.es_id is None:
+                if h5a.exists(self._id, self._e(name)):
+                    attr_exists = True
+                    tempname = uuid.uuid4().hex
+                else:
+                    tempname = name
             else:
-                tempname = name
-
-            attr = h5a.create(self._id, self._e(tempname), htype, space)
+                if h5a.exists_async(self._id, self._e(name), es_id=self.es_id.es_id):
+                    attr_exists = True
+                    tempname = uuid.uuid4().hex
+                else:
+                    tempname = name
+            
+            if self.es_id is None:
+                attr = h5a.create(self._id, self._e(tempname), htype, space)
+            else:
+                attr = h5a.create_async(self._id, self._e(tempname), htype, space, es_id=self.es_id.es_id)
             try:
                 if not isinstance(data, Empty):
-                    attr.write(data, mtype=htype2)
+                    attr.write(data, mtype=htype2, es_id=self.es_id)
                 if attr_exists:
                     # Rename temp attribute to proper name
                     # No atomic rename in HDF5 :(
                     h5a.delete(self._id, self._e(name))
-                    h5a.rename(self._id, self._e(tempname), self._e(name))
+                    h5a.rename(self._id, self._e(tempname), self._e(name), es_id=self.es_id)
             except:
                 attr.close()
                 h5a.delete(self._id, self._e(tempname))
@@ -231,7 +248,10 @@ class AttributeManager(base.MutableMappingHDF5, base.CommonStateObject):
             if not name in self:
                 self[name] = value
             else:
-                attr = h5a.open(self._id, self._e(name))
+                if self.es_id is None:
+                    attr = h5a.open(self._id, self._e(name))
+                else:
+                    attr = h5a.open_async(self._id, self._e(name), es_id=self.es_id.es_id)
 
                 if is_empty_dataspace(attr):
                     raise OSError("Empty attributes can't be modified")
@@ -245,7 +265,7 @@ class AttributeManager(base.MutableMappingHDF5, base.CommonStateObject):
                 if (value.shape != attr.shape) and not \
                    (value.size == 1 and product(attr.shape) == 1):
                     raise TypeError("Shape of data is incompatible with existing attribute")
-                attr.write(value)
+                attr.write(value, es_id=self.es_id)
 
     @with_phil
     def __len__(self):
@@ -278,7 +298,10 @@ class AttributeManager(base.MutableMappingHDF5, base.CommonStateObject):
     @with_phil
     def __contains__(self, name):
         """ Determine if an attribute exists, by name. """
-        return h5a.exists(self._id, self._e(name))
+        if self.es_id is None:
+            return h5a.exists(self._id, self._e(name))
+        else:
+            return h5a.exists_async(self._id, self._e(name), es_id=self.es_id.es_id)
 
     @with_phil
     def __repr__(self):

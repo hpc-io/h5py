@@ -53,12 +53,13 @@ _register_lzf()
 
 # --- Public API --------------------------------------------------------------
 
-from . import h5a, h5d, h5ds, h5f, h5fd, h5g, h5r, h5s, h5t, h5p, h5z, h5pl
+from . import h5a, h5d, h5ds, h5f, h5fd, h5g, h5r, h5s, h5t, h5p, h5z, h5pl, h5es
 
 from ._hl import filters
 from ._hl.base import is_hdf5, HLObject, Empty
 from ._hl.files import (
     File,
+    File_async,
     register_driver,
     unregister_driver,
     registered_drivers,
@@ -80,6 +81,8 @@ from .h5t import (special_dtype, check_dtype,
 from .h5s import UNLIMITED
 
 from .version import version as __version__
+
+from ._hl.eventset import Eventset
 
 
 if version.hdf5_version_tuple[:3] >= get_config().vds_min_hdf5_version:

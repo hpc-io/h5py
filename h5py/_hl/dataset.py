@@ -39,7 +39,7 @@ def make_new_dset(parent, shape=None, dtype=None, data=None, name=None,
                   fillvalue=None, scaleoffset=None, track_times=False,
                   external=None, track_order=None, dcpl=None, dapl=None,
                   efile_prefix=None, virtual_prefix=None,
-                  allow_unknown_filter=False):
+                  allow_unknown_filter=False, es_id=None):
     """ Return a new low-level dataset identifier """
 
     # Convert data to a C-contiguous ndarray
@@ -152,8 +152,10 @@ def make_new_dset(parent, shape=None, dtype=None, data=None, name=None,
     else:
         sid = h5s.create_simple(shape, maxshape)
 
-
-    dset_id = h5d.create(parent.id, name, tid, sid, dcpl=dcpl, dapl=dapl)
+    if es_id is not None:
+        dset_id = h5d.create_async(parent.id, name, tid, sid, dcpl=dcpl, dapl=dapl, es_id=es_id.es_id)
+    else:
+        dset_id = h5d.create(parent.id, name, tid, sid, dcpl=dcpl, dapl=dapl)
 
     if (data is not None) and (not isinstance(data, Empty)):
         dset_id.write(h5s.ALL, h5s.ALL, data)
@@ -173,8 +175,29 @@ def open_dset(parent, name, dapl=None, efile_prefix=None, virtual_prefix=None, *
 
     if virtual_prefix is not None:
         dapl.set_virtual_prefix(virtual_prefix)
-
+    
     dset_id = h5d.open(parent.id, name, dapl=dapl)
+
+    return dset_id
+
+def open_dset_async(parent, name, dapl=None, efile_prefix=None, virtual_prefix=None, es_id=None, **kwds):
+    """ Return an existing low-level dataset identifier """
+
+    if efile_prefix is not None or virtual_prefix is not None:
+        dapl = dapl or h5p.create(h5p.DATASET_ACCESS)
+    else:
+        dapl = dapl or None
+
+    if efile_prefix is not None:
+        dapl.set_efile_prefix(efile_prefix)
+
+    if virtual_prefix is not None:
+        dapl.set_virtual_prefix(virtual_prefix)
+    
+    if es_id is None:
+        dset_id = h5d.open_async(parent.id, name, dapl=dapl, es_id=es_id.es_id)
+    else:
+        dset_id = h5d.open_async(parent.id, name, dapl=dapl, es_id=0)
 
     return dset_id
 
@@ -610,13 +633,20 @@ class Dataset(HLObject):
     def _is_empty(self):
         """Check if extent type is empty"""
         return self._extent_type == h5s.NULL
+        
+    #@property
+    #def es_id(self):
+        #"""Eventset for async h5py"""
+        #from h5py import Eventset
+        #return self.es_id
 
     @with_phil
-    def __init__(self, bind, *, readonly=False):
+    def __init__(self, bind, *, readonly=False, es_id=None):
         """ Create a new Dataset object by binding to a low-level DatasetID.
         """
         if not isinstance(bind, h5d.DatasetID):
             raise ValueError("%s is not a DatasetID" % bind)
+        self.es_id= es_id
         super().__init__(bind)
 
         self._dcpl = self.id.get_create_plist()
@@ -658,7 +688,29 @@ class Dataset(HLObject):
             size = tuple(size)
             self.id.set_extent(size)
             #h5f.flush(self.id)  # THG recommends
+    def resize_async(self, size, axis=None, es=None):
+        """ 
+        """
+        with phil:
+            if self.chunks is None:
+                raise TypeError("Only chunked datasets can be resized")
 
+            if axis is not None:
+                if not (axis >=0 and axis < self.id.rank):
+                    raise ValueError("Invalid axis (0 to %s allowed)" % (self.id.rank-1))
+                try:
+                    newlen = int(size)
+                except TypeError:
+                    raise TypeError("Argument must be a single int if axis is specified")
+                size = list(self.shape)
+                size[axis] = newlen
+
+            size = tuple(size)
+            if es is None:
+                self.id.set_extent(size)
+            else:
+                self.id.set_extent_async(size, es_id=es.es_id)
+            #h5f.flush(self.id)  # THG recommends
     @with_phil
     def __len__(self):
         """ The size of the first axis.  TypeError if scalar.
@@ -1005,6 +1057,34 @@ class Dataset(HLObject):
 
             for mspace in dest_sel.broadcast(source_sel.array_shape):
                 self.id.read(mspace, fspace, dest, dxpl=self._dxpl)
+                
+    def read_direct_async(self, dest, source_sel=None, dest_sel=None, es=None):
+        """ Read data directly from HDF5 into an existing NumPy array.
+
+        The destination array must be C-contiguous and writable.
+        Selections must be the output of numpy.s_[<args>].
+
+        Broadcasting is supported for simple indexing.
+        """
+        with phil:
+            if self._is_empty:
+                raise TypeError("Empty datasets have no numpy representation")
+            if source_sel is None:
+                source_sel = sel.SimpleSelection(self.shape)
+            else:
+                source_sel = sel.select(self.shape, source_sel, self)  # for numpy.s_
+            fspace = source_sel.id
+
+            if dest_sel is None:
+                dest_sel = sel.SimpleSelection(dest.shape)
+            else:
+                dest_sel = sel.select(dest.shape, dest_sel)
+
+            for mspace in dest_sel.broadcast(source_sel.array_shape):
+                if es is None:
+                    self.id.read_async(mspace, fspace, dest, dxpl=self._dxpl, es_id=self.es_id)
+                else:
+                    self.id.read_async(mspace, fspace, dest, dxpl=self._dxpl, es_id=es.es_id)
 
     def write_direct(self, source, source_sel=None, dest_sel=None):
         """ Write data directly to HDF5 from a NumPy array.
@@ -1030,6 +1110,31 @@ class Dataset(HLObject):
 
             for fspace in dest_sel.broadcast(source_sel.array_shape):
                 self.id.write(mspace, fspace, source, dxpl=self._dxpl)
+
+    def write_direct_async(self, source, source_sel=None, dest_sel=None, es=None):
+        """ Write data directly to HDF5 from a NumPy array.
+
+        The source array must be C-contiguous.  Selections must be
+        the output of numpy.s_[<args>].
+
+        Broadcasting is supported for simple indexing.
+        """
+        with phil:
+            if self._is_empty:
+                raise TypeError("Empty datasets cannot be written to")
+            if source_sel is None:
+                source_sel = sel.SimpleSelection(source.shape)
+            else:
+                source_sel = sel.select(source.shape, source_sel)  # for numpy.s_
+            mspace = source_sel.id
+
+            if dest_sel is None:
+                dest_sel = sel.SimpleSelection(self.shape)
+            else:
+                dest_sel = sel.select(self.shape, dest_sel, self)
+
+            for fspace in dest_sel.broadcast(source_sel.array_shape):
+                self.id.write_async(mspace, fspace, source, dxpl=self._dxpl, es_id=es.es_id)
 
     @with_phil
     def __array__(self, dtype=None):
@@ -1114,3 +1219,4 @@ class Dataset(HLObject):
         You can optionally pass a name to associate with this scale.
         """
         h5ds.set_scale(self._id, self._e(name))
+

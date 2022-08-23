@@ -299,3 +299,78 @@ def test_python_int_uint64(writable_file):
     # Check modifying an existing attribute
     f.attrs.modify('a', data)
     np.testing.assert_array_equal(f.attrs['a'], np.array(data, dtype=np.uint64))
+
+
+@ut.skipUnless(h5py.version.hdf5_version_tuple >= (1, 13, 0), 'HDF5 1.13.0 required')
+class TestAsync(BaseAttrs):
+    def setUp(self):
+        pass
+    def tearDown(self):
+        pass
+        
+    def test_create_async(self):
+        """ Attribute creation by direct assignment """
+        from h5py import Eventset
+        from h5py import File_async
+        es_id = Eventset()
+        import sys
+        wait_forever = sys.maxsize
+        self.f = File_async(self.mktemp(), 'w', es=es_id)
+        dset = self.f.create_dataset_async("dset", dtype=int, es=es_id)
+        
+        dset.attrs_async['a'] = 4.0
+        
+        es_id.wait(wait_forever)
+        self.assertEqual(es_id.num_in_progress, 0)
+        self.assertEqual(es_id.op_failed, False)
+        self.assertEqual(list(dset.attrs.keys()), ['a'])
+        
+        es_id.wait(wait_forever)
+        self.assertEqual(es_id.num_in_progress, 0)
+        self.assertEqual(es_id.op_failed, False)
+        self.assertEqual(dset.attrs['a'], 4.0)
+        
+        if self.f:
+            self.f.close()
+            #self.f.close_async()
+            es_id.wait(wait_forever)
+            self.assertEqual(es_id.num_in_progress, 0)
+            self.assertEqual(es_id.op_failed, False)
+        if es_id:
+            es_id.close()
+            
+    def test_modify_async(self):
+        """ Attributes are modified by direct assignment"""
+        from h5py import Eventset
+        from h5py import File_async
+        es_id = Eventset()
+        import sys
+        wait_forever = sys.maxsize
+        self.f = File_async(self.mktemp(), 'w', es=es_id)
+        dset = self.f.create_dataset_async("dset", dtype=int, es=es_id)
+        
+        dset.attrs['a'] = 3
+        es_id.wait(wait_forever)
+        self.assertEqual(es_id.num_in_progress, 0)
+        self.assertEqual(es_id.op_failed, False)
+        self.assertEqual(list(dset.attrs.keys()), ['a'])
+        self.assertEqual(dset.attrs['a'], 3)
+        
+        dset.attrs['a'] = 4
+        es_id.wait(wait_forever)
+        self.assertEqual(es_id.num_in_progress, 0)
+        self.assertEqual(es_id.op_failed, False)
+        self.assertEqual(list(dset.attrs.keys()), ['a'])
+        self.assertEqual(dset.attrs['a'], 4)   
+        if self.f:
+            self.f.close()
+            #self.f.close_async()
+            es_id.wait(wait_forever)
+            self.assertEqual(es_id.num_in_progress, 0)
+            self.assertEqual(es_id.op_failed, False)
+        if es_id:
+            es_id.close()
+                     
+
+
+
