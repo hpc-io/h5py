@@ -2003,12 +2003,12 @@ class TestAsync(BaseDataset):
         assert es_id.num_in_progress==0
         assert es_id.op_failed==False
         self.assertArrayEqual(data1_write, data1_read)
-        es_id.close()
         if self.f:
             self.f.close()
             es_id.wait(wait_forever)
             assert es_id.num_in_progress==0
             assert es_id.op_failed==False
+        if es_id:
             es_id.close()
         
     def test_resize(self):

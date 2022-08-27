@@ -582,7 +582,7 @@ class File(Group):
                 self.id.close()
                 _objects.nonlocal_close()
                 
-    def close(self, es_id=None):
+    def close_async(self, es_id=None):
         if es_id is None:
             es_id=self.es_id
         

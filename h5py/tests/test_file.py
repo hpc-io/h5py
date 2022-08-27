@@ -1109,7 +1109,7 @@ class TestAsync(TestCase):
         es_id = Eventset()
         wait_forever = sys.maxsize
         fid = File(self.mktemp(), 'w', es=es_id)
-        fid.flush_async()
+        fid.flush()
         es_id.wait(wait_forever)    
         assert es_id.num_in_progress==0
         assert es_id.op_failed==False

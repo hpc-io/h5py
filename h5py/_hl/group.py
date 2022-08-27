@@ -159,7 +159,7 @@ class Group(HLObject, MutableMappingHDF5):
                 name = self._e(name)
                 if b'/' in name.lstrip(b'/'):
                     parent_path, name = name.rsplit(b'/', 1)
-                    group = self.require_group(parent_path, es_id=es)
+                    group = self.require_group(parent_path, es=es)
             
             dsid = dataset.make_new_dset(group, shape, dtype, data, name, es_id=es, **kwds)
             dset = dataset.Dataset(dsid, es_id=es)
@@ -227,7 +227,7 @@ class Group(HLObject, MutableMappingHDF5):
 
             self.create_virtual_dataset(name, layout, fillvalue)
 
-    def require_dataset(self, name, shape, dtype, exact=False, es_id=None, **kwds):
+    def require_dataset(self, name, shape, dtype, exact=False, es=None, **kwds):
         """ Open a dataset, creating it if it doesn't exist.
 
         If keyword "exact" is False (default), an existing dataset must have
@@ -311,7 +311,7 @@ class Group(HLObject, MutableMappingHDF5):
 
         return self.create_dataset(name, **kwupdate)
 
-    def require_group(self, name, es_id = None):
+    def require_group(self, name, es = None):
         # TODO: support kwargs like require_dataset
         """Return a group, creating it if it doesn't exist.
 
@@ -320,7 +320,7 @@ class Group(HLObject, MutableMappingHDF5):
         """
         with phil:
             if not name in self:
-                return self.create_group(name, es_id=es_id)
+                return self.create_group(name, es=es)
             grp = self[name]
             if not isinstance(grp, Group):
                 raise TypeError("Incompatible object (%s) already exists" % grp.__class__.__name__)
