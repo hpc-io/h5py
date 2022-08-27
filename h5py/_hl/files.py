@@ -582,11 +582,11 @@ class File(Group):
                 self.id.close()
                 _objects.nonlocal_close()
                 
-    def close_async(self, es_id=None):
+    def close(self, es_id=None):
         if es_id is None:
             es_id=self.es_id
         
-        self.id.close_async(es_id.es_id)
+        self.id.close(es_id.es_id)
         #import sys
         #es_id.wait(sys.maxsize)
         

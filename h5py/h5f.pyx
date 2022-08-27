@@ -103,11 +103,15 @@ def open(char* name, unsigned int flags=H5F_ACC_RDWR, PropFAID fapl=None, es_id 
 
     Keyword fapl may be a file access property list.
     """
-    if HDF5_VERSION < (1, 13, 0) or es_id is None:
+    IF HDF5_VERSION >=  (1, 13, 0):
+        if es_id is None:
+            return FileID(H5Fopen(name, flags, pdefault(fapl)))
+        else:
+            #async debug message
+            print('Using h5py with async HDF5 to open a file')
+            return FileID(H5Fopen_async(name, flags, pdefault(fapl), es_id.es_id))
+    ELSE:
         return FileID(H5Fopen(name, flags, pdefault(fapl)))
-    else:
-        print('Using h5py with async HDF5 to open a file')
-        return FileID(H5Fopen_async(name, flags, pdefault(fapl), es_id.es_id))
 
 
 @with_phil
@@ -127,11 +131,15 @@ def create(char* name, int flags=H5F_ACC_TRUNC, PropFCID fcpl=None,
     To keep the behavior in line with that of Python's built-in functions,
     the default is ACC_TRUNC.  Be careful!
     """
-    if HDF5_VERSION < (1, 13, 0) or es_id is None:
+    IF HDF5_VERSION >=  (1, 13, 0):
+        if es_id is None:
+            return FileID(H5Fcreate(name, flags, pdefault(fcpl), pdefault(fapl)))
+        else:
+            #async debug message
+            print('Using h5py with async HDF5 to create a file')
+            return FileID(H5Fcreate_async(name, flags, pdefault(fcpl), pdefault(fapl), es_id.es_id))
+    ELSE:
         return FileID(H5Fcreate(name, flags, pdefault(fcpl), pdefault(fapl)))
-    else:
-        print('Using h5py with async HDF5 to open a file')
-        return FileID(H5Fcreate_async(name, flags, pdefault(fcpl), pdefault(fapl), es_id.es_id))
 
 
 IF HDF5_VERSION >= (1, 8, 9):
@@ -170,11 +178,15 @@ def flush(ObjectID obj not None, int scope=H5F_SCOPE_LOCAL, es_id = None):
     SCOPE_GLOBAL
         Flush the entire virtual file
     """
-    if HDF5_VERSION < (1, 13, 0) or es_id is None:
+    IF HDF5_VERSION >= (1, 13, 0):
+        if es_id is None:
+            H5Fflush(obj.id, <H5F_scope_t>scope)
+        else:
+            #async debug message
+            print("Using h5py with async HDF5 to flush a file")
+            H5Fflush_async(obj.id, <H5F_scope_t>scope, es_id.es_id)
+    ELSE:
         H5Fflush(obj.id, <H5F_scope_t>scope)
-    else:
-        print("Using h5py with async HDF5 to flush a file")
-        H5Fflush_async(obj.id, <H5F_scope_t>scope, es_id.es_id)
     
 
 
@@ -393,13 +405,16 @@ cdef class FileID(GroupID):
         The new identifier is guaranteed to neither be mounted nor contain
         a mounted file.
         """
-        if HDF5_VERSION < (1, 13, 0) or es_id is None:
+        IF HDF5_VERSION >= (1, 13, 0):
+            if es_id is None:
+                return FileID(H5Freopen(self.id))
+            else:
+                #async debug message
+                print("Using h5py with async HDF5 to reopen a file")
+                return FileID(H5Freopen_async(self.id, es_id.es_id))
+        ELSE:
             return FileID(H5Freopen(self.id))
-        else:
-            print("Using h5py with async HDF5 to reopen a file")
-            return FileID(H5Freopen_async(self.id, es_id.es_id))
         
-    
 
     @with_phil
     def get_filesize(self):

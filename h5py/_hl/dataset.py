@@ -176,28 +176,8 @@ def open_dset(parent, name, dapl=None, efile_prefix=None, virtual_prefix=None, e
     dset_id = h5d.open(parent.id, name, dapl=dapl, es_id=es_id)
 
     return dset_id
-'''
-def open_dset_async(parent, name, dapl=None, efile_prefix=None, virtual_prefix=None, es_id=None, **kwds):
-    """ Return an existing low-level dataset identifier """
 
-    if efile_prefix is not None or virtual_prefix is not None:
-        dapl = dapl or h5p.create(h5p.DATASET_ACCESS)
-    else:
-        dapl = dapl or None
 
-    if efile_prefix is not None:
-        dapl.set_efile_prefix(efile_prefix)
-
-    if virtual_prefix is not None:
-        dapl.set_virtual_prefix(virtual_prefix)
-    
-    if es_id is None:
-        dset_id = h5d.open_async(parent.id, name, dapl=dapl, es_id=es_id.es_id)
-    else:
-        dset_id = h5d.open_async(parent.id, name, dapl=dapl, es_id=0)
-
-    return dset_id
-'''
 class AstypeWrapper:
     """Wrapper to convert data on reading from a dataset.
     """
@@ -509,7 +489,7 @@ class Dataset(HLObject):
         if '_selector' in self._cache_props:
             return self._cache_props['_selector']
 
-        slr = _selector.Selector(self.id.get_space())
+        slr = _selector.Selector(self.id.get_space(self.es_id))
 
         # If the file is read-only, cache the reader to speed up future uses.
         # This cache is invalidated by .refresh() when using SWMR.
@@ -605,7 +585,7 @@ class Dataset(HLObject):
     def maxshape(self):
         """Shape up to which this dataset can be resized.  Axes with value
         None have no resize limit. """
-        space = self.id.get_space()
+        space = self.id.get_space(self.es_id)
         dims = space.get_simple_extent_dims(True)
         if dims is None:
             return None
@@ -624,7 +604,7 @@ class Dataset(HLObject):
     @with_phil
     def _extent_type(self):
         """Get extent type for this dataset - SIMPLE, SCALAR or NULL"""
-        return self.id.get_space().get_simple_extent_type()
+        return self.id.get_space(self.es_id).get_simple_extent_type()
 
     @cached_property
     def _is_empty(self):
@@ -762,6 +742,8 @@ class Dataset(HLObject):
 
         if self._fast_read_ok and (new_dtype is None):
             try:
+            	#if create a dataset asynchronously then the async function will be called
+            	#set dset.es_id=None if we want to call the sync function
                 return self._fast_reader.read(args)
             except TypeError:
                 pass  # Fall back to Python read pathway below
@@ -820,7 +802,7 @@ class Dataset(HLObject):
         # === Scalar dataspaces =================
 
         if self.shape == ():
-            fspace = self.id.get_space()
+            fspace = self.id.get_space(self.es_id)
             selection = sel2.select_read(fspace, args)
             if selection.mshape is None:
                 arr = numpy.zeros((), dtype=new_dtype)

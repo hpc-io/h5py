@@ -6,7 +6,7 @@
 #
 # License:  Standard 3-clause BSD; see "license.txt" for full license terms
 #           and contributor agreement.
-
+include "config.pxi"
 from ._objects cimport pdefault
 from ._objects import phil, with_phil
 

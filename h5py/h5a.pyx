@@ -12,6 +12,8 @@
     Provides access to the low-level HDF5 "H5A" attribute interface.
 """
 
+include "config.pxi"
+
 # C-level imports
 from ._objects cimport pdefault
 from .h5t cimport TypeID, typewrap, py_create
@@ -35,7 +37,7 @@ import_array()
 @cython.binding(False)
 @with_phil
 def create(ObjectID loc not None, char* name, TypeID tid not None,
-    SpaceID space not None, *, char* obj_name='.', PropID lapl=None):
+    SpaceID space not None, *, char* obj_name='.', PropID lapl=None, es_id=None):
     """(ObjectID loc, STRING name, TypeID tid, SpaceID space, **kwds) => AttrID
 
     Create a new attribute, attached to an existing object.
@@ -46,27 +48,19 @@ def create(ObjectID loc not None, char* name, TypeID tid not None,
     PropID lapl
         Link access property list for obj_name
     """
-    return AttrID(H5Acreate_by_name(loc.id, obj_name, name, tid.id,
-            space.id, H5P_DEFAULT, H5P_DEFAULT, pdefault(lapl)))
-
-#IF HDF5_VERSION >= (1, 13, 0):
-@cython.binding(False)
-@with_phil
-def create_async(ObjectID loc not None, char* name, TypeID tid not None,
-    SpaceID space not None, *, char* obj_name='.', PropID lapl=None, hid_t es_id=0):
-    """(ObjectID loc, STRING name, TypeID tid, SpaceID space, **kwds) => AttrID
-
-    Create a new attribute, attached to an existing object.
-
-    STRING obj_name (".")
-	Attach attribute to this group member instead
-
-    PropID lapl
-	Link access property list for obj_name
-    """
-    print("Using H5Acreate_by_name_async")
-    return AttrID(H5Acreate_by_name_async(loc.id, obj_name, name, tid.id,
-	    space.id, H5P_DEFAULT, H5P_DEFAULT, pdefault(lapl), es_id))
+    IF HDF5_VERSION >=  (1, 13, 0):
+        if es_id is None:
+            return AttrID(H5Acreate_by_name(loc.id, obj_name, name, tid.id,
+                    space.id, H5P_DEFAULT, H5P_DEFAULT, pdefault(lapl)))
+        else:
+            #async debug message
+            print("Using H5Acreate_by_name_async")
+            return AttrID(H5Acreate_by_name_async(loc.id, obj_name, name, tid.id,
+                    space.id, H5P_DEFAULT, H5P_DEFAULT, pdefault(lapl), es_id.es_id))
+    ELSE:
+        return AttrID(H5Acreate_by_name(loc.id, obj_name, name, tid.id,
+                space.id, H5P_DEFAULT, H5P_DEFAULT, pdefault(lapl)))
+    
 
 # --- open, open_by_name, open_by_idx ---
 @cython.binding(False)
@@ -101,24 +95,6 @@ x`
             <H5_index_t>index_type, <H5_iter_order_t>order, index,
             H5P_DEFAULT, pdefault(lapl)))
 
-#IF HDF5_VERSION >= (1, 13, 0):
-@cython.binding(False)
-@with_phil
-def open_async(ObjectID loc not None, char* name=NULL, int index=-1, *,
-	char* obj_name='.', int index_type=H5_INDEX_NAME, int order=H5_ITER_INC,
-	PropID lapl=None, hid_t es_id=0):
-
-    if (name == NULL and index < 0) or (name != NULL and index >= 0):
-        raise TypeError("Exactly one of name or idx must be specified")
-
-    if name != NULL:
-        #print("Using H5Aopen_by_name_async")
-        return AttrID(H5Aopen_by_name(loc.id, obj_name, name,
-                        H5P_DEFAULT, pdefault(lapl)))
-    else:
-        return AttrID(H5Aopen_by_idx(loc.id, obj_name,
-            <H5_index_t>index_type, <H5_iter_order_t>order, index,
-            H5P_DEFAULT, pdefault(lapl)))
 # --- exists, exists_by_name ---
 
 @with_phil
@@ -136,14 +112,6 @@ def exists(ObjectID loc not None, char* name, *,
     """
     return <bint>H5Aexists_by_name(loc.id, obj_name, name, pdefault(lapl))
 
-@with_phil
-def exists_async(ObjectID loc not None, char* name, *,
-            char* obj_name=".", PropID lapl=None, hid_t es_id=0):
-    """async verison of exists
-    """
-    cdef hbool_t exists
-    print('Using H5Aexists_by_name_async')
-    return <bint>H5Aexists_by_name(loc.id, obj_name, name, pdefault(lapl))
     
 # --- rename, rename_by_name ---
 
@@ -160,17 +128,15 @@ def rename(ObjectID loc not None, char* name, char* new_name, *,
     PropID lapl (None)
         Link access property list for obj_name
     """
-    if es_id is None:
+    IF HDF5_VERSION >=  (1, 13, 0):
+        if es_id is None:
+            H5Arename_by_name(loc.id, obj_name, name, new_name, pdefault(lapl))
+        else:
+            #async debug message
+            print("Using H5Arename_by_name_async")
+            H5Arename_by_name_async(loc.id, obj_name, name, new_name, pdefault(lapl), es_id.es_id)
+    ELSE:
         H5Arename_by_name(loc.id, obj_name, name, new_name, pdefault(lapl))
-    else:
-        H5Arename_by_name_async(loc.id, obj_name, name, new_name, pdefault(lapl), es_id.es_id)
-    
-#IF HDF5_VERSION >= (1, 13, 0):
-@with_phil
-def rename_async(ObjectID loc not None, char* name, char* new_name, *, char* obj_name='.', PropID lapl=None, hid_t es_id=0):
-
-    print("Using H5Arename_by_name_async")
-    H5Arename_by_name_async(loc.id, obj_name, name, new_name, pdefault(lapl), es_id)
 
 
 @cython.binding(False)
@@ -403,18 +369,21 @@ cdef class AttrID(ObjectID):
         """
         cdef hid_t space_id
         space_id = 0
-        if es_id is None:
-            esid = 0
-        else:
-            esid = es_id.es_id
         try:
             space_id = H5Aget_space(self.id)
             check_numpy_write(arr, space_id)
 
             if mtype is None:
                 mtype = py_create(arr.dtype)
-            attr_rw(self.id, mtype.id, PyArray_DATA(arr), 1, esid)
-            
+
+            IF HDF5_VERSION >= (1, 13, 0):
+                if es_id is None:
+                    attr_rw(self.id, mtype.id, PyArray_DATA(arr), 1, 0)
+                else:
+                    #async debug message
+                    attr_rw(self.id, mtype.id, PyArray_DATA(arr), 1, es_id.es_id)
+            ELSE:
+                attr_rw(self.id, mtype.id, PyArray_DATA(arr), 1, 0)
 
         finally:
             if space_id:
@@ -434,10 +403,6 @@ cdef class AttrID(ObjectID):
         """
         cdef hid_t space_id
         space_id = 0
-        if es_id is None:
-            esid = 0
-        else:
-            esid = es_id.es_id
         try:
             space_id = H5Aget_space(self.id)
             check_numpy_read(arr, space_id)
@@ -445,7 +410,14 @@ cdef class AttrID(ObjectID):
             if mtype is None:
                 mtype = py_create(arr.dtype)
 
-            attr_rw(self.id, mtype.id, PyArray_DATA(arr), 0, esid)
+            IF HDF5_VERSION >= (1, 13, 0):
+                if es_id is None:
+                    attr_rw(self.id, mtype.id, PyArray_DATA(arr), 0, 0)
+                else:
+                    #async debug message
+                    attr_rw(self.id, mtype.id, PyArray_DATA(arr), 0, es_id.es_id)
+            ELSE:
+                attr_rw(self.id, mtype.id, PyArray_DATA(arr), 0, 0)
 
         finally:
             if space_id:

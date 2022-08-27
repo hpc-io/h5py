@@ -84,11 +84,15 @@ def create(ObjectID loc not None, object name, TypeID tid not None,
         cname = name
 
     if cname != NULL:
-        if HDF5_VERSION < (1, 13, 0) or es_id is None:
+        IF HDF5_VERSION >=  (1, 13, 0):
+            if es_id is None:
+                dsid = H5Dcreate(loc.id, cname, tid.id, space.id, pdefault(lcpl), pdefault(dcpl), pdefault(dapl))
+            else:
+                #async debug message
+                print('Using H5Dcreate_async')
+                dsid = H5Dcreate_async(loc.id, cname, tid.id, space.id, pdefault(lcpl), pdefault(dcpl), pdefault(dapl), es_id=es_id.es_id)
+        ELSE:
             dsid = H5Dcreate(loc.id, cname, tid.id, space.id, pdefault(lcpl), pdefault(dcpl), pdefault(dapl))
-        else:
-            print('Using H5Dcreate_async')
-            dsid = H5Dcreate_async(loc.id, cname, tid.id, space.id, pdefault(lcpl), pdefault(dcpl), pdefault(dapl), es_id=es_id.es_id)
     else:
         dsid = H5Dcreate_anon(loc.id, tid.id, space.id,
                  pdefault(dcpl), pdefault(dapl))    
@@ -101,11 +105,15 @@ def open(ObjectID loc not None, char* name, PropID dapl=None, es_id = None):
     Open an existing dataset attached to a group or file object, by name.
     If specified, dapl may be a dataset access property list.
     """
-    if HDF5_VERSION < (1, 13, 0) or es_id is None:
+    IF HDF5_VERSION >=  (1, 13, 0):
+        if es_id is None:
+            return DatasetID(H5Dopen(loc.id, name, pdefault(dapl)))
+        else:
+            #async debug message
+            print("Using H5Dopen_async")
+            return DatasetID(H5Dopen_async(loc.id, name, pdefault(dapl), es_id.es_id))
+    ELSE:
         return DatasetID(H5Dopen(loc.id, name, pdefault(dapl)))
-    else:
-        print("Using H5Dopen_async")
-        return DatasetID(H5Dopen_async(loc.id, name, pdefault(dapl), es_id.es_id))
 
 
 # --- Proxy functions for safe(r) threading -----------------------------------
@@ -196,10 +204,13 @@ cdef class DatasetID(ObjectID):
         plist_id = pdefault(dxpl)
         data = PyArray_DATA(arr_obj)
 
-        if HDF5_VERSION < (1, 13, 0) or es_id is None:
+        IF HDF5_VERSION >= (1, 13, 0):
+            if es_id is None:
+                dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 1, 0)
+            else:
+                dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 1, es_id.es_id)
+        ELSE:
             dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 1, 0)
-        else:
-            dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 1, es_id.es_id)
 
     
         
@@ -240,10 +251,13 @@ cdef class DatasetID(ObjectID):
         plist_id = pdefault(dxpl)
         data = PyArray_DATA(arr_obj)
 
-        if HDF5_VERSION < (1, 13, 0) or es_id is None:
+        IF HDF5_VERSION >= (1, 13, 0):
+            if es_id is None:
+                dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 0, 0)
+            else:
+                dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 0, es_id.es_id)
+        ELSE:
             dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 0, 0)
-        else:
-            dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 0, es_id=es_id.es_id)
     
 
 
@@ -259,12 +273,15 @@ cdef class DatasetID(ObjectID):
         cdef hsize_t* dims = NULL
 
         try:
-            
-            if HDF5_VERSION < (1, 13, 0) or es_id is None:
+            IF HDF5_VERSION >=  (1, 13, 0):
+                if es_id is None:
+                    space_id = H5Dget_space(self.id)
+                else:
+                    #async debug message
+                    print("Using H5Dget_space_async")
+                    space_id = H5Dget_space_async(self.id, es_id.es_id)
+            ELSE:
                 space_id = H5Dget_space(self.id)
-            else:
-                print("Using H5Dget_space_async")
-                space_id = H5Dget_space_async(self.id, es_id.es_id)
             rank = H5Sget_simple_extent_ndims(space_id)
             if len(shape) != rank:
                 raise TypeError("New shape length (%d) must match dataset rank (%d)" % (len(shape), rank))
@@ -292,11 +309,15 @@ cdef class DatasetID(ObjectID):
         cdef hsize_t* dims = NULL
 
         try:
-            if HDF5_VERSION < (1, 13, 0) or es_id is None:
+            IF HDF5_VERSION >=  (1, 13, 0):
+                if es_id is None:
+                    space_id = H5Dget_space(self.id)
+                else:
+                    #async debug message
+                    print("Using H5Dget_space_async")
+                    space_id = H5Dget_space_async(self.id, es_id.es_id)
+            ELSE:
                 space_id = H5Dget_space(self.id)
-            else:
-                print("Using H5Dget_space_async")
-                space_id = H5Dget_space_async(self.id, es_id.es_id)
             rank = H5Sget_simple_extent_ndims(space_id)
 
             if len(shape) != rank:
@@ -304,13 +325,16 @@ cdef class DatasetID(ObjectID):
 
             dims = <hsize_t*>emalloc(sizeof(hsize_t)*rank)
             convert_tuple(shape, dims, rank)
-            if HDF5_VERSION < (1, 13, 0) or es_id is None:
+            IF HDF5_VERSION >=  (1, 13, 0):
+                if es_id is None:
+                    H5Dset_extent(self.id, dims)
+                else:
+                    #async debug message
+                    print("Using H5Dget_space_async")
+                    H5Dset_extent_async(self.id, dims, es_id.es_id)
+            ELSE:
                 H5Dset_extent(self.id, dims)
-            else:
-                print("Using H5Dget_space_async")
-                H5Dset_extent_async(self.id, dims, es_id.es_id)
             
-
         finally:
             efree(dims)
             if space_id:
@@ -322,11 +346,15 @@ cdef class DatasetID(ObjectID):
         """ () => SpaceID
             Create and return a new copy of the dataspace for this dataset.
         """
-        if HDF5_VERSION < (1, 13, 0) or es_id is None:
+        IF HDF5_VERSION >=  (1, 13, 0):
+            if es_id is None:
+                return SpaceID(H5Dget_space(self.id))
+            else:
+                #async debug message
+                print("Using H5Dget_space_async")
+                return SpaceID(H5Dget_space_async(self.id, es_id.es_id))
+        ELSE:
             return SpaceID(H5Dget_space(self.id))
-        else:
-            print("Using H5Dget_space_async")
-            return SpaceID(H5Dget_space_async(self.id, es_id.es_id))
 
 
     @with_phil

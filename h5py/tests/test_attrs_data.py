@@ -326,7 +326,7 @@ class TestAsync(BaseAttrs):
         self.assertEqual(2, self.f.attrs_async["x"])
             
         if self.f:
-            self.f.close_async()
+            self.f.close()
             es_id.wait(wait_forever)
             self.assertEqual(es_id.num_in_progress, 0)
             self.assertEqual(es_id.op_failed, False)

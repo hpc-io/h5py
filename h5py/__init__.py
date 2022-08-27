@@ -53,7 +53,7 @@ _register_lzf()
 
 # --- Public API --------------------------------------------------------------
 
-from . import h5a, h5d, h5ds, h5f, h5fd, h5g, h5r, h5s, h5t, h5p, h5z, h5pl, h5es
+from . import h5a, h5d, h5ds, h5f, h5fd, h5g, h5r, h5s, h5t, h5p, h5z, h5pl
 
 from ._hl import filters
 from ._hl.base import is_hdf5, HLObject, Empty
@@ -88,7 +88,7 @@ if version.hdf5_version_tuple[:3] >= get_config().vds_min_hdf5_version:
 
 if version.hdf5_version_tuple[:3] >= (1, 13, 0):
     from ._hl.eventset import Eventset
-    from . import h5es
+    
 
 def run_tests(args=''):
     """Run tests with pytest and returns the exit status as an int.

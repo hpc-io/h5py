@@ -1881,7 +1881,7 @@ class TestVirtualPrefix(BaseDataset):
 class TestAsync(BaseDataset):
     import sys
     from h5py import Eventset
-    from h5py import File_async
+    from h5py import File
     def setUp(self):
         pass
 
@@ -1889,31 +1889,31 @@ class TestAsync(BaseDataset):
         pass
     
 
-    def test_create_dataset_async(self):
+    def test_create_dataset(self):
         from h5py import Eventset
-        from h5py import File_async
+        from h5py import File
         wait_forever = sys.maxsize
         es_id = Eventset()
-        self.f = File_async(self.mktemp(), 'w', es=es_id)
-        dset = self.f.create_dataset_async("dset", (20, 30), es=es_id)
+        self.f = File(self.mktemp(), 'w', es=es_id)
+        dset = self.f.create_dataset("dset", (20, 30), es=es_id)
         if self.f:
-            self.f.close_async()
+            self.f.close()
             es_id.wait(wait_forever)
             assert es_id.num_in_progress==0
             assert es_id.op_failed==False
         if es_id:
             es_id.close()
 
-    def test_write_direct_async(self):
+    def test_write_direct(self):
         from h5py import Eventset
-        from h5py import File_async
+        from h5py import File
         wait_forever = sys.maxsize
         es_id = Eventset()
-        self.f = File_async(self.mktemp(), 'w', es=es_id)
+        self.f = File(self.mktemp(), 'w', es=es_id)
         
         data_write = np.arange(100, dtype=int)
-        dset = self.f.create_dataset_async("dset", (10, 10), dtype=int, es=es_id)
-        dset.write_direct_async(data_write.reshape(10, 10), es=es_id)
+        dset = self.f.create_dataset("dset", (10, 10), dtype=int, es=es_id)
+        dset.write_direct(data_write.reshape(10, 10), es=es_id)
         
         es_id.wait(wait_forever)
         assert es_id.num_in_progress==0
@@ -1923,23 +1923,23 @@ class TestAsync(BaseDataset):
         self.assertArrayEqual(out.reshape(10, 10), data_write.reshape(10, 10))
         
         if self.f:
-            self.f.close_async()
+            self.f.close()
             es_id.wait(wait_forever)
             assert es_id.num_in_progress==0
             assert es_id.op_failed==False
         if es_id:
             es_id.close()
 
-    def test_read_direct_async(self):
+    def test_read_direct(self):
         from h5py import Eventset
-        from h5py import File_async
+        from h5py import File
         wait_forever = sys.maxsize
         es_id = Eventset()
-        self.f = File_async(self.mktemp(), 'w', es=es_id)
+        self.f = File(self.mktemp(), 'w', es=es_id)
         data_read = np.empty(100, dtype=int)
         data = np.arange(100, dtype=int)
-        dset = self.f.create_dataset_async("dset", (10, 10), data=data.reshape(10, 10), es=es_id)
-        dset.read_direct_async(data_read.reshape(10, 10), es=es_id)
+        dset = self.f.create_dataset("dset", (10, 10), data=data.reshape(10, 10), es=es_id)
+        dset.read_direct(data_read.reshape(10, 10), es=es_id)
         
         es_id.wait(wait_forever)
         assert es_id.num_in_progress==0
@@ -1947,7 +1947,7 @@ class TestAsync(BaseDataset):
         
         self.assertArrayEqual(data.reshape(10, 10), data_read.reshape(10, 10))
         if self.f:
-            self.f.close_async()
+            self.f.close()
             es_id.wait(wait_forever)
             assert es_id.num_in_progress==0
             assert es_id.op_failed==False
@@ -1956,10 +1956,10 @@ class TestAsync(BaseDataset):
 
     def test_data_change_async(self):
         from h5py import Eventset
-        from h5py import File_async
+        from h5py import File
         wait_forever = sys.maxsize
         es_id = Eventset()
-        self.f = File_async(self.mktemp(), 'w', es=es_id)
+        self.f = File(self.mktemp(), 'w', es=es_id)
         
         data0_write = np.arange(20 * 30, dtype=int)
         data1_write = np.arange(20 * 30, dtype=int)
@@ -1967,18 +1967,18 @@ class TestAsync(BaseDataset):
 
         data0_read = np.empty(20 * 30, dtype=int)
         data1_read = np.empty(20 * 30, dtype=int)
-        dset0 = self.f.create_dataset_async("dset0", (20, 30), dtype=int, es=es_id)
-        dset1 = self.f.create_dataset_async("dset1", (20, 30), dtype=int, es=es_id)
+        dset0 = self.f.create_dataset("dset0", (20, 30), dtype=int, es=es_id)
+        dset1 = self.f.create_dataset("dset1", (20, 30), dtype=int, es=es_id)
         # W0, R0, W1, R1, W1', W0', R0', R1'
-        dset0.write_direct_async(data0_write.reshape(20, 30), es=es_id)
-        dset0.read_direct_async(data0_read.reshape(20, 30), es=es_id)
+        dset0.write_direct(data0_write.reshape(20, 30), es=es_id)
+        dset0.read_direct(data0_read.reshape(20, 30), es=es_id)
         #Verify data
         es_id.wait(wait_forever)    
         assert es_id.num_in_progress==0
         assert es_id.op_failed==False
         self.assertArrayEqual(data0_write, data0_read)
-        dset1.write_direct_async(data1_write.reshape(20, 30), es=es_id)
-        dset1.read_direct_async(data1_read.reshape(20, 30), es=es_id)
+        dset1.write_direct(data1_write.reshape(20, 30), es=es_id)
+        dset1.read_direct(data1_read.reshape(20, 30), es=es_id)
         # Verify data
         es_id.wait(wait_forever)    
         assert es_id.num_in_progress==0
@@ -1988,16 +1988,16 @@ class TestAsync(BaseDataset):
         # Change data 0 and 1
         data0_write *= -1
         data1_write *= -1
-        dset0.write_direct_async(data0_write.reshape(20, 30), es=es_id)
-        dset0.read_direct_async(data0_read.reshape(20, 30), es=es_id)
+        dset0.write_direct(data0_write.reshape(20, 30), es=es_id)
+        dset0.read_direct(data0_read.reshape(20, 30), es=es_id)
         
         #Verify data
         es_id.wait(wait_forever)    
         assert es_id.num_in_progress==0
         assert es_id.op_failed==False
         self.assertArrayEqual(data0_write, data0_read)
-        dset1.write_direct_async(data1_write.reshape(20, 30), es=es_id)
-        dset1.read_direct_async(data1_read.reshape(20, 30), es=es_id)
+        dset1.write_direct(data1_write.reshape(20, 30), es=es_id)
+        dset1.read_direct(data1_read.reshape(20, 30), es=es_id)
         # Verify data
         es_id.wait(wait_forever)    
         assert es_id.num_in_progress==0
@@ -2005,39 +2005,39 @@ class TestAsync(BaseDataset):
         self.assertArrayEqual(data1_write, data1_read)
         es_id.close()
         if self.f:
-            self.f.close_async()
+            self.f.close()
             es_id.wait(wait_forever)
             assert es_id.num_in_progress==0
             assert es_id.op_failed==False
             es_id.close()
         
-    def test_resize_async(self):
+    def test_resize(self):
         from h5py import Eventset
-        from h5py import File_async
+        from h5py import File
         wait_forever = sys.maxsize
         es_id = Eventset()
-        self.f = File_async(self.mktemp(), 'w', es=es_id)
-        dset = self.f.create_dataset_async('foo', (20, 30), maxshape=(20, 60), es=es_id)
+        self.f = File(self.mktemp(), 'w', es=es_id)
+        dset = self.f.create_dataset('foo', (20, 30), maxshape=(20, 60), es=es_id)
         
         es_id.wait(wait_forever)    
         assert es_id.num_in_progress==0
         assert es_id.op_failed==False
         self.assertEqual(dset.shape, (20, 30))
         
-        dset.resize_async((20, 50), es=es_id)
+        dset.resize((20, 50), es=es_id)
         es_id.wait(wait_forever)    
         assert es_id.num_in_progress==0
         assert es_id.op_failed==False
         self.assertEqual(dset.shape, (20, 50))
         
-        dset.resize_async((20, 60), es=es_id)
+        dset.resize((20, 60), es=es_id)
         es_id.wait(wait_forever)    
         assert es_id.num_in_progress==0
         assert es_id.op_failed==False
         self.assertEqual(dset.shape, (20, 60))
         
         if self.f:
-            self.f.close_async()
+            self.f.close()
             es_id.wait(wait_forever)
             assert es_id.num_in_progress==0
             assert es_id.op_failed==False
