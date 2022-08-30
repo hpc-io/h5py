@@ -333,13 +333,6 @@ class HLObject(CommonStateObject):
         """ Attributes attached to this object """
         from . import attrs
         with phil:
-            return attrs.AttributeManager(self)
-            
-    @property
-    def attrs_async(self):
-        """ Attributes attached to this object """
-        from . import attrs
-        with phil:
             return attrs.AttributeManager(self, es_id=self.es_id)
             
 

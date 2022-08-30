@@ -283,16 +283,6 @@ class File(Group):
         # hdf5 complains that a file identifier is an invalid location for an
         # attribute. Instead of self, pass the root group to AttributeManager:
         from . import attrs
-        self.es_id=None
-        with phil:
-            return attrs.AttributeManager(self['/'])
-
-    @property
-    def attrs_async(self):
-        """ Attributes attached to this object """
-        # hdf5 complains that a file identifier is an invalid location for an
-        # attribute. Instead of self, pass the root group to AttributeManager:
-        from . import attrs
         with phil:
             return attrs.AttributeManager(self['/'], es_id=self.es_id)
 
@@ -567,29 +557,25 @@ class File(Group):
 
         super().__init__(fid, es)
 
-    def close(self):
+    def close(self, es_id=None):
         """ Close the file.  All open objects become invalid """
         with phil:
+            if es_id is None and self.es_id is None:
             # Check that the file is still open, otherwise skip
-            if self.id.valid:
-                # We have to explicitly murder all open objects related to the file
+                if self.id.valid:
+                    # We have to explicitly murder all open objects related to the file
 
-                # Close file-resident objects first, then the files.
-                # Otherwise we get errors in MPI mode.
-                self.id._close_open_objects(h5f.OBJ_LOCAL | ~h5f.OBJ_FILE)
-                self.id._close_open_objects(h5f.OBJ_LOCAL | h5f.OBJ_FILE)
+                    # Close file-resident objects first, then the files.
+                    # Otherwise we get errors in MPI mode.
+                    self.id._close_open_objects(h5f.OBJ_LOCAL | ~h5f.OBJ_FILE)
+                    self.id._close_open_objects(h5f.OBJ_LOCAL | h5f.OBJ_FILE)
 
-                self.id.close()
-                _objects.nonlocal_close()
-                
-    def close_async(self, es_id=None):
-        if es_id is None:
-            es_id=self.es_id
-        
-        self.id.close(es_id.es_id)
-        #import sys
-        #es_id.wait(sys.maxsize)
-        
+                    self.id.close()
+                    _objects.nonlocal_close()
+            else:
+                if es_id is None:
+                    es_id = self.es_id
+                self.id.close_async(es_id.es_id)
 
     def flush(self, es=None):
         """ Tell the HDF5 library to flush its buffers.
