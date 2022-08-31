@@ -82,9 +82,14 @@ from .h5s import UNLIMITED
 from .version import version as __version__
 
 
+
 if version.hdf5_version_tuple[:3] >= get_config().vds_min_hdf5_version:
     from ._hl.vds import VirtualSource, VirtualLayout
 
+if version.hdf5_version_tuple[:3] >= (1, 13, 0):
+    from ._hl.eventset import Eventset
+    from ._hl.files import File_async
+    
 
 def run_tests(args=''):
     """Run tests with pytest and returns the exit status as an int.

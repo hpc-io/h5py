@@ -71,7 +71,7 @@ IF HDF5_VERSION >= (1, 10, 5):
 @with_phil
 def create(ObjectID loc not None, object name, TypeID tid not None,
            SpaceID space not None, PropID dcpl=None, PropID lcpl=None,
-           PropID dapl = None):
+           PropID dapl = None, es_id = None):
     """ (objectID loc, STRING name or None, TypeID tid, SpaceID space,
          PropDCID dcpl=None, PropID lcpl=None) => DatasetID
 
@@ -84,22 +84,37 @@ def create(ObjectID loc not None, object name, TypeID tid not None,
         cname = name
 
     if cname != NULL:
-        dsid = H5Dcreate(loc.id, cname, tid.id, space.id,
-                 pdefault(lcpl), pdefault(dcpl), pdefault(dapl))
+        IF HDF5_VERSION >=  (1, 13, 0):
+            if es_id is None:
+                dsid = H5Dcreate(loc.id, cname, tid.id, space.id, pdefault(lcpl), pdefault(dcpl), pdefault(dapl))
+            else:
+                #async debug message
+                print('Using H5Dcreate_async')
+                dsid = H5Dcreate_async(loc.id, cname, tid.id, space.id, pdefault(lcpl), pdefault(dcpl), pdefault(dapl), es_id=es_id.es_id)
+        ELSE:
+            dsid = H5Dcreate(loc.id, cname, tid.id, space.id, pdefault(lcpl), pdefault(dcpl), pdefault(dapl))
     else:
         dsid = H5Dcreate_anon(loc.id, tid.id, space.id,
-                 pdefault(dcpl), pdefault(dapl))
+                 pdefault(dcpl), pdefault(dapl))    
     return DatasetID(dsid)
 
+
 @with_phil
-def open(ObjectID loc not None, char* name, PropID dapl=None):
+def open(ObjectID loc not None, char* name, PropID dapl=None, es_id = None):
     """ (ObjectID loc, STRING name, PropID dapl=None) => DatasetID
-
     Open an existing dataset attached to a group or file object, by name.
-
     If specified, dapl may be a dataset access property list.
     """
-    return DatasetID(H5Dopen(loc.id, name, pdefault(dapl)))
+    IF HDF5_VERSION >=  (1, 13, 0):
+        if es_id is None:
+            return DatasetID(H5Dopen(loc.id, name, pdefault(dapl)))
+        else:
+            #async debug message
+            print("Using H5Dopen_async")
+            return DatasetID(H5Dopen_async(loc.id, name, pdefault(dapl), es_id.es_id))
+    ELSE:
+        return DatasetID(H5Dopen(loc.id, name, pdefault(dapl)))
+
 
 # --- Proxy functions for safe(r) threading -----------------------------------
 
@@ -155,7 +170,7 @@ cdef class DatasetID(ObjectID):
     @with_phil
     def read(self, SpaceID mspace not None, SpaceID fspace not None,
              ndarray arr_obj not None, TypeID mtype=None,
-             PropID dxpl=None):
+             PropID dxpl=None, es_id=None):
         """ (SpaceID mspace, SpaceID fspace, NDARRAY arr_obj,
              TypeID mtype=None, PropDXID dxpl=None)
 
@@ -189,13 +204,20 @@ cdef class DatasetID(ObjectID):
         plist_id = pdefault(dxpl)
         data = PyArray_DATA(arr_obj)
 
-        dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 1)
+        IF HDF5_VERSION >= (1, 13, 0):
+            if es_id is None:
+                dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 1, 0)
+            else:
+                dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 1, es_id.es_id)
+        ELSE:
+            dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 1, 0)
 
-
+    
+        
     @with_phil
     def write(self, SpaceID mspace not None, SpaceID fspace not None,
               ndarray arr_obj not None, TypeID mtype=None,
-              PropID dxpl=None):
+              PropID dxpl=None, es_id=None):
         """ (SpaceID mspace, SpaceID fspace, NDARRAY arr_obj,
              TypeID mtype=None, PropDXID dxpl=None)
 
@@ -229,13 +251,19 @@ cdef class DatasetID(ObjectID):
         plist_id = pdefault(dxpl)
         data = PyArray_DATA(arr_obj)
 
-        dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 0)
+        IF HDF5_VERSION >= (1, 13, 0):
+            if es_id is None:
+                dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 0, 0)
+            else:
+                dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 0, es_id.es_id)
+        ELSE:
+            dset_rw(self_id, mtype_id, mspace_id, fspace_id, plist_id, data, 0, 0)
+    
 
 
     @with_phil
-    def extend(self, tuple shape):
+    def extend(self, tuple shape, es_id = None):
         """ (TUPLE shape)
-
             Extend the given dataset so it's at least as big as "shape".  Note
             that a dataset may only be extended up to the maximum dimensions of
             its dataspace, which are fixed when the dataset is created.
@@ -245,9 +273,16 @@ cdef class DatasetID(ObjectID):
         cdef hsize_t* dims = NULL
 
         try:
-            space_id = H5Dget_space(self.id)
+            IF HDF5_VERSION >=  (1, 13, 0):
+                if es_id is None:
+                    space_id = H5Dget_space(self.id)
+                else:
+                    #async debug message
+                    print("Using H5Dget_space_async")
+                    space_id = H5Dget_space_async(self.id, es_id.es_id)
+            ELSE:
+                space_id = H5Dget_space(self.id)
             rank = H5Sget_simple_extent_ndims(space_id)
-
             if len(shape) != rank:
                 raise TypeError("New shape length (%d) must match dataset rank (%d)" % (len(shape), rank))
 
@@ -261,10 +296,10 @@ cdef class DatasetID(ObjectID):
                 H5Sclose(space_id)
 
 
-    @with_phil
-    def set_extent(self, tuple shape):
-        """ (TUPLE shape)
 
+    @with_phil
+    def set_extent(self, tuple shape, es_id = None):
+        """ (TUPLE shape)
             Set the size of the dataspace to match the given shape.  If the new
             size is larger in any dimension, it must be compatible with the
             maximum dataspace size.
@@ -274,7 +309,15 @@ cdef class DatasetID(ObjectID):
         cdef hsize_t* dims = NULL
 
         try:
-            space_id = H5Dget_space(self.id)
+            IF HDF5_VERSION >=  (1, 13, 0):
+                if es_id is None:
+                    space_id = H5Dget_space(self.id)
+                else:
+                    #async debug message
+                    print("Using H5Dget_space_async")
+                    space_id = H5Dget_space_async(self.id, es_id.es_id)
+            ELSE:
+                space_id = H5Dget_space(self.id)
             rank = H5Sget_simple_extent_ndims(space_id)
 
             if len(shape) != rank:
@@ -282,8 +325,16 @@ cdef class DatasetID(ObjectID):
 
             dims = <hsize_t*>emalloc(sizeof(hsize_t)*rank)
             convert_tuple(shape, dims, rank)
-            H5Dset_extent(self.id, dims)
-
+            IF HDF5_VERSION >=  (1, 13, 0):
+                if es_id is None:
+                    H5Dset_extent(self.id, dims)
+                else:
+                    #async debug message
+                    print("Using H5Dget_space_async")
+                    H5Dset_extent_async(self.id, dims, es_id.es_id)
+            ELSE:
+                H5Dset_extent(self.id, dims)
+            
         finally:
             efree(dims)
             if space_id:
@@ -291,12 +342,19 @@ cdef class DatasetID(ObjectID):
 
 
     @with_phil
-    def get_space(self):
+    def get_space(self, es_id = None):
         """ () => SpaceID
-
             Create and return a new copy of the dataspace for this dataset.
         """
-        return SpaceID(H5Dget_space(self.id))
+        IF HDF5_VERSION >=  (1, 13, 0):
+            if es_id is None:
+                return SpaceID(H5Dget_space(self.id))
+            else:
+                #async debug message
+                print("Using H5Dget_space_async")
+                return SpaceID(H5Dget_space_async(self.id, es_id.es_id))
+        ELSE:
+            return SpaceID(H5Dget_space(self.id))
 
 
     @with_phil

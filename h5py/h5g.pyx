@@ -139,21 +139,27 @@ cdef class GroupIter:
 # === Basic group management ==================================================
 
 @with_phil
-def open(ObjectID loc not None, char* name):
+def open(ObjectID loc not None, char* name, es_id = None):
     """(ObjectID loc, STRING name) => GroupID
-
     Open an existing HDF5 group, attached to some other group.
     """
-    return GroupID(H5Gopen(loc.id, name, H5P_DEFAULT))
+    IF HDF5_VERSION >= (1, 13, 0):
+        if es_id is None:
+            return GroupID(H5Gopen(loc.id, name, H5P_DEFAULT))
+        else:
+            #async debug message
+            print("Using H5Gopen_async")
+            return GroupID(H5Gopen_async(loc.id, name, H5P_DEFAULT, es_id.es_id))
+    ELSE:
+        return GroupID(H5Gopen(loc.id, name, H5P_DEFAULT))
 
 
 @with_phil
 def create(ObjectID loc not None, object name, PropID lcpl=None,
-           PropID gcpl=None):
+           PropID gcpl=None, es_id=None):
     """(ObjectID loc, STRING name or None, PropLCID lcpl=None,
         PropGCID gcpl=None)
     => GroupID
-
     Create a new group, under a given parent group.  If name is None,
     an anonymous group will be created in the file.
     """
@@ -163,7 +169,15 @@ def create(ObjectID loc not None, object name, PropID lcpl=None,
         cname = name
 
     if cname != NULL:
-        gid = H5Gcreate(loc.id, cname, pdefault(lcpl), pdefault(gcpl), H5P_DEFAULT)
+        IF HDF5_VERSION >= (1, 13, 0):
+            if es_id is None:
+                gid = H5Gcreate(loc.id, cname, pdefault(lcpl), pdefault(gcpl), H5P_DEFAULT)
+            else:
+                #async debug message
+                print("Using H5Gcreate_async")
+                gid = H5Gcreate_async(loc.id, cname, pdefault(lcpl), pdefault(gcpl), H5P_DEFAULT, es_id.es_id)
+        ELSE:
+            gid = H5Gcreate(loc.id, cname, pdefault(lcpl), pdefault(gcpl), H5P_DEFAULT)
     else:
         gid = H5Gcreate_anon(loc.id, pdefault(gcpl), H5P_DEFAULT)
 

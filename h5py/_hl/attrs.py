@@ -44,9 +44,10 @@ class AttributeManager(base.MutableMappingHDF5, base.CommonStateObject):
         shape, use create().
     """
 
-    def __init__(self, parent):
+    def __init__(self, parent, es_id=None):
         """ Private constructor.
         """
+        self.es_id = es_id
         self._id = parent.id
 
     @with_phil
@@ -54,7 +55,7 @@ class AttributeManager(base.MutableMappingHDF5, base.CommonStateObject):
         """ Read the value of an attribute.
         """
         attr = h5a.open(self._id, self._e(name))
-
+            
         if is_empty_dataspace(attr):
             return Empty(attr.dtype)
 
@@ -74,7 +75,7 @@ class AttributeManager(base.MutableMappingHDF5, base.CommonStateObject):
             dtype = subdtype                # 'f'
 
         arr = numpy.zeros(shape, dtype=dtype, order='C')
-        attr.read(arr, mtype=htype)
+        attr.read(arr, mtype=htype, es_id=self.es_id)
 
         string_info = h5t.check_string_dtype(dtype)
         if string_info and (string_info.length is None):
@@ -201,16 +202,16 @@ class AttributeManager(base.MutableMappingHDF5, base.CommonStateObject):
                 tempname = uuid.uuid4().hex
             else:
                 tempname = name
-
-            attr = h5a.create(self._id, self._e(tempname), htype, space)
+            
+            attr = h5a.create(self._id, self._e(tempname), htype, space, es_id=self.es_id)
             try:
                 if not isinstance(data, Empty):
-                    attr.write(data, mtype=htype2)
+                    attr.write(data, mtype=htype2, es_id=self.es_id)
                 if attr_exists:
                     # Rename temp attribute to proper name
                     # No atomic rename in HDF5 :(
                     h5a.delete(self._id, self._e(name))
-                    h5a.rename(self._id, self._e(tempname), self._e(name))
+                    h5a.rename(self._id, self._e(tempname), self._e(name), es_id=self.es_id)
             except:
                 attr.close()
                 h5a.delete(self._id, self._e(tempname))
@@ -245,7 +246,7 @@ class AttributeManager(base.MutableMappingHDF5, base.CommonStateObject):
                 if (value.shape != attr.shape) and not \
                    (value.size == 1 and product(attr.shape) == 1):
                     raise TypeError("Shape of data is incompatible with existing attribute")
-                attr.write(value)
+                attr.write(value, es_id=self.es_id)
 
     @with_phil
     def __len__(self):

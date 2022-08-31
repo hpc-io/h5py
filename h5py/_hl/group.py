@@ -31,12 +31,13 @@ class Group(HLObject, MutableMappingHDF5):
     """ Represents an HDF5 group.
     """
 
-    def __init__(self, bind):
+    def __init__(self, bind, es_id=None):
         """ Create a new Group object by binding to a low-level GroupID.
         """
         with phil:
             if not isinstance(bind, h5g.GroupID):
                 raise ValueError("%s is not a GroupID" % bind)
+            self.es_id=es_id
             super().__init__(bind)
 
 
@@ -65,6 +66,30 @@ class Group(HLObject, MutableMappingHDF5):
             gcpl = Group._gcpl_crt_order if track_order else None
             gid = h5g.create(self.id, name, lcpl=lcpl, gcpl=gcpl)
             return Group(gid)
+            
+    def create_group_async(self, name, track_order=None, es=None):
+        """ Create and return a new subgroup.
+
+        Name may be absolute or relative.  Fails if the target name already
+        exists.
+
+        track_order
+            Track dataset/group/attribute creation order under this group
+            if True. If None use global default h5.get_config().track_order.
+        """
+        if track_order is None:
+            track_order = h5.get_config().track_order
+
+        with phil:
+            name, lcpl = self._e(name, lcpl=True)
+            gcpl = Group._gcpl_crt_order if track_order else None
+            
+            if es is None:
+                es = self.es_id
+            
+            gid = h5g.create(self.id, name, lcpl=lcpl, gcpl=gcpl, es_id=es)
+            
+            return Group(gid, es)
 
     def create_dataset(self, name, shape=None, dtype=None, data=None, **kwds):
         """ Create a new HDF5 dataset
@@ -160,6 +185,33 @@ class Group(HLObject, MutableMappingHDF5):
 
             dsid = dataset.make_new_dset(group, shape, dtype, data, name, **kwds)
             dset = dataset.Dataset(dsid)
+            return dset
+
+
+    def create_dataset_async(self, name, shape=None, dtype=None, data=None, es=None, **kwds):
+        """ Use async function to create a new HDF5 dataset
+        """
+        if 'track_order' not in kwds:
+            kwds['track_order'] = h5.get_config().track_order
+
+        if 'efile_prefix' in kwds:
+            kwds['efile_prefix'] = self._e(kwds['efile_prefix'])
+
+        if 'virtual_prefix' in kwds:
+            kwds['virtual_prefix'] = self._e(kwds['virtual_prefix'])
+        
+        if es is None:
+            es = self.es_id
+        with phil:
+            group = self
+            if name:
+                name = self._e(name)
+                if b'/' in name.lstrip(b'/'):
+                    parent_path, name = name.rsplit(b'/', 1)
+                    group = self.require_group_async(parent_path, es=es)
+
+            dsid = dataset.make_new_dset(group, shape, dtype, data, name, es_id=es, **kwds)
+            dset = dataset.Dataset(dsid, es_id=es)
             return dset
 
     if vds_support:
@@ -275,6 +327,47 @@ class Group(HLObject, MutableMappingHDF5):
 
             return dset
 
+    def require_dataset_async(self, name, shape, dtype, exact=False, es=None, **kwds):
+        """ Using async function to open a dataset, creating it if it doesn't exist.
+        """
+        if 'efile_prefix' in kwds:
+            kwds['efile_prefix'] = self._e(kwds['efile_prefix'])
+
+        if 'virtual_prefix' in kwds:
+            kwds['virtual_prefix'] = self._e(kwds['virtual_prefix'])
+            
+        if es is None:
+            es = self.es_id
+        with phil:
+            if name not in self:
+                return self.create_dataset(name, *(shape, dtype), **kwds)
+
+            if isinstance(shape, int):
+                shape = (shape,)
+
+            try:
+                dsid = dataset.open_dset(self, self._e(name), es_id=es, **kwds)
+                dset = dataset.Dataset(dsid)
+            except KeyError:
+                dset = self[name]
+                raise TypeError("Incompatible object (%s) already exists" % dset.__class__.__name__)
+            except:
+                raise
+
+            if shape != dset.shape:
+                if "maxshape" not in kwds:
+                    raise TypeError("Shapes do not match (existing %s vs new %s)" % (dset.shape, shape))
+                elif kwds["maxshape"] != dset.maxshape:
+                    raise TypeError("Max shapes do not match (existing %s vs new %s)" % (dset.maxshape, kwds["maxshape"]))
+
+            if exact:
+                if dtype != dset.dtype:
+                    raise TypeError("Datatypes do not exactly match (existing %s vs new %s)" % (dset.dtype, dtype))
+            elif not numpy.can_cast(dtype, dset.dtype):
+                raise TypeError("Datatypes cannot be safely cast (existing %s vs new %s)" % (dset.dtype, dtype))
+
+            return dset
+
     def create_dataset_like(self, name, other, **kwupdate):
         """ Create a dataset similar to `other`.
 
@@ -322,6 +415,18 @@ class Group(HLObject, MutableMappingHDF5):
                 raise TypeError("Incompatible object (%s) already exists" % grp.__class__.__name__)
             return grp
 
+    def require_group_async(self, name, es = None):
+        """Return a group, creating it if it doesn't exist.
+
+        """
+        with phil:
+            if not name in self:
+                return self.create_group(name, es=es)
+            grp = self[name]
+            if not isinstance(grp, Group):
+                raise TypeError("Incompatible object (%s) already exists" % grp.__class__.__name__)
+            return grp
+
     @with_phil
     def __getitem__(self, name):
         """ Open an object in the file """
@@ -331,7 +436,7 @@ class Group(HLObject, MutableMappingHDF5):
             if oid is None:
                 raise ValueError("Invalid HDF5 object reference")
         elif isinstance(name, (bytes, str)):
-            oid = h5o.open(self.id, self._e(name), lapl=self._lapl)
+            oid = h5o.open(self.id, self._e(name), lapl=self._lapl, es_id=self.es_id)
         else:
             raise TypeError("Accessing a group is done with bytes or str, "
                             " not {}".format(type(name)))
@@ -340,7 +445,7 @@ class Group(HLObject, MutableMappingHDF5):
         if otype == h5i.GROUP:
             return Group(oid)
         elif otype == h5i.DATASET:
-            return dataset.Dataset(oid, readonly=(self.file.mode == 'r'))
+            return dataset.Dataset(oid, readonly=(self.file.mode == 'r'), es_id=self.es_id)
         elif otype == h5i.DATATYPE:
             return datatype.Datatype(oid)
         else:
