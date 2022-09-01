@@ -1111,49 +1111,33 @@ class TestMutableMapping(BaseGroup):
 @ut.skipIf(h5py.version.hdf5_version_tuple < (1, 13, 0), 'Requires HDF5 1.13.0 or later')     
 class TestAsync(BaseGroup):
     def setUp(self):
-        pass
+        from h5py import Eventset
+        import sys
+        self.wait_forever = sys.maxsize
+        self.es_id = Eventset()
+        self.f = File(self.mktemp(), 'w', es=self.es_id)
 
     def tearDown(self):
-        pass
-    import sys
-    def test_create_async(self):
-        from h5py import Eventset
-        from h5py import File
-        """ test create_group """
-        wait_forever = sys.maxsize
-        es_id = Eventset()
-        self.f = File(self.mktemp(), 'w', es=es_id)
-        grp = self.f.create_group('foo', es=es_id)
-        self.assertIsInstance(grp, Group)
-
-        grp2 = self.f.create_group(b'bar', es=es_id)
-        self.assertIsInstance(grp2, Group)
         if self.f:
             self.f.close()
-            es_id.wait(wait_forever)
-            assert es_id.num_in_progress==0
-            assert es_id.op_failed==False
-        if es_id:
-            es_id.close()
+            self.es_id.wait(self.wait_forever)
+            assert self.es_id.num_in_progress==0
+            assert self.es_id.op_failed==False
+        if self.es_id:
+            self.es_id.close()
 
-    def test_open(self):
+    def test_create_async(self):
+        """ test create_group """
+        grp = self.f.create_group('foo', es=self.es_id)
+        self.assertIsInstance(grp, Group)
+
+        grp2 = self.f.create_group(b'bar', es=self.es_id)
+        self.assertIsInstance(grp2, Group)
+
+    def test_open_async(self):
         """ test open_async """
-        from h5py import Eventset
-        from h5py import File
-        wait_forever = sys.maxsize
-        es_id = Eventset()
-        self.f = File(self.mktemp(), 'w', es=es_id)
-        
-        grp = self.f.create_group('foo', es=es_id)
+        grp = self.f.create_group('foo', es=self.es_id)
         grp2 = self.f['foo']
         grp3 = self.f['/foo']
         self.assertEqual(grp, grp2)
         self.assertEqual(grp, grp3)
-        
-        if self.f:
-            self.f.close()
-            es_id.wait(wait_forever)
-            assert es_id.num_in_progress==0
-            assert es_id.op_failed==False
-        if es_id:
-            es_id.close()

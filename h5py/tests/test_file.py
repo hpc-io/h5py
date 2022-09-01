@@ -1044,73 +1044,57 @@ def test_close_gc(writable_file):
 
 @ut.skipIf(h5py.version.hdf5_version_tuple < (1, 13, 0), 'Requires HDF5 1.13.0 or later')
 class TestAsync(TestCase):
-    from h5py._hl.eventset import Eventset
-    from h5py import File
-    import sys
     def setUp(self):
-        pass
+        from h5py import Eventset
+        import sys
+        self.wait_forever = sys.maxsize
+        self.es_id = Eventset()
+        self.fname = self.mktemp()
 
     def tearDown(self):
-        pass
+        if self.es_id:
+            self.es_id.wait(self.wait_forever)    
+            assert self.es_id.num_in_progress==0
+            assert self.es_id.op_failed==False
+            self.es_id.close()
         
     def test_create_async(self):
-        from h5py import Eventset
-        from h5py import File
         """ Mode 'w' opens file in overwrite mode to test H5Fcreate_async"""
-        wait_forever = sys.maxsize
-        es_id = Eventset()
-        fname = self.mktemp()
-        
-        fid = File(fname, 'w', es=es_id)
+        fid = File(self.mktemp(), 'w', es=self.es_id)
         self.assertTrue(fid)
-        fid.create_group('foo', es=es_id)
+        fid.create_group('foo', es=self.es_id)
         fid.close()
-        es_id.wait(wait_forever)
-        assert es_id.num_in_progress==0
-        assert es_id.op_failed==False
+        self.es_id.wait(self.wait_forever)
+        assert self.es_id.num_in_progress==0
+        assert self.es_id.op_failed==False
         
-        fid = File(fname, 'w', es=es_id)
+        fid = File(self.mktemp(), 'w', es=self.es_id)
         self.assertNotIn('foo', fid)
         fid.close()
-        es_id.wait(wait_forever)
-        assert es_id.num_in_progress==0
-        assert es_id.op_failed==False
 
 
     def test_open_async(self):
-        from h5py import Eventset
-        from h5py import File
         """ Mode 'r' opens file in readonly mode to test H5Fopen_async"""
-        wait_forever = sys.maxsize
-        es_id = Eventset()
-        fname = self.mktemp()
-        fid = File(fname, 'w', es=es_id)
+        fid = File(self.fname, 'w', es=self.es_id)
         
         fid.close()
-        es_id.wait(wait_forever)
-        assert es_id.num_in_progress==0
-        assert es_id.op_failed==False
+        self.es_id.wait(self.wait_forever)
+        assert self.es_id.num_in_progress==0
+        assert self.es_id.op_failed==False
         self.assertFalse(fid)
-        fid = File(fname, 'r', es=es_id)
+        fid = File(self.fname, 'r', es=self.es_id)
         self.assertTrue(fid)
         with self.assertRaises(ValueError):
-            fid.create_group('foo', es=es_id)
+            fid.create_group('foo', es=self.es_id)
         
         fid.close()
-        es_id.wait(wait_forever)
-        assert es_id.num_in_progress==0
-        assert es_id.op_failed==False
         
     
     def test_flush_async(self):
-        from h5py import Eventset
-        from h5py import File
         """ Flush via .flush_async method """
-        es_id = Eventset()
-        wait_forever = sys.maxsize
-        fid = File(self.mktemp(), 'w', es=es_id)
+        fid = File(self.mktemp(), 'w', es=self.es_id)
         fid.flush()
-        es_id.wait(wait_forever)    
-        assert es_id.num_in_progress==0
-        assert es_id.op_failed==False
+        self.es_id.wait(self.wait_forever)    
+        assert self.es_id.num_in_progress==0
+        assert self.es_id.op_failed==False
         fid.close()
