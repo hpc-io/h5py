@@ -260,3 +260,36 @@ class TestWriteException(BaseAttrs):
 
         with self.assertRaises(KeyError):
             self.f.attrs['x']
+
+
+
+@ut.skipUnless(h5py.version.hdf5_version_tuple >= (1, 13, 0), 'HDF5 1.13.0 required')
+class TestAsync(BaseAttrs):
+    def setUp(self):
+        from h5py import Eventset
+        from h5py import File_async
+        import sys
+        self.es_id = Eventset()
+        self.wait_forever = sys.maxsize
+        self.f = File_async(self.mktemp(), 'w', es=self.es_id)
+
+    def tearDown(self):
+        if self.f:
+            self.f.close()
+            self.es_id.wait(self.wait_forever)
+            self.assertEqual(self.es_id.num_in_progress, 0)
+            self.assertEqual(self.es_id.op_failed, False)
+        if self.es_id:
+            self.es_id.close()   
+
+    def test_write_async(self):
+        self.f.attrs_async["y"] = 2
+        self.es_id.wait(self.wait_forever)
+        self.assertEqual(self.es_id.num_in_progress, 0)
+        self.assertEqual(self.es_id.op_failed, False)
+        self.assertEqual(2, self.f.attrs_async["y"])
+              
+    def test_read_async(self):
+        #some problem remains, now it's using the sync function
+        self.f.attrs_async["x"]=2
+        self.assertEqual(2, self.f.attrs_async['x'])  

@@ -1108,3 +1108,39 @@ class TestMutableMapping(BaseGroup):
         Group.__delitem__
         Group.__iter__
         Group.__len__
+        
+        
+@ut.skipIf(h5py.version.hdf5_version_tuple < (1, 13, 0), 'Requires HDF5 1.13.0 or later')     
+class TestAsync(BaseGroup):
+    def setUp(self):
+        from h5py import Eventset
+        from h5py import File_async
+        import sys
+        self.wait_forever = sys.maxsize
+        self.es_id = Eventset()
+        self.f = File_async(self.mktemp(), 'w', es=self.es_id)
+
+    def tearDown(self):
+        if self.f:
+            self.f.close()
+            self.es_id.wait(self.wait_forever)
+            assert self.es_id.num_in_progress==0
+            assert self.es_id.op_failed==False
+        if self.es_id:
+            self.es_id.close()
+
+    def test_create_async(self):
+        """ test create_group """
+        grp = self.f.create_group_async('foo', es=self.es_id)
+        self.assertIsInstance(grp, Group)
+
+        grp2 = self.f.create_group_async(b'bar', es=self.es_id)
+        self.assertIsInstance(grp2, Group)
+
+    def test_open_async(self):
+        """ test open_async """
+        grp = self.f.create_group_async('foo', es=self.es_id)
+        grp2 = self.f['foo']
+        grp3 = self.f['/foo']
+        self.assertEqual(grp, grp2)
+        self.assertEqual(grp, grp3)

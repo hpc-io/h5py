@@ -1041,3 +1041,65 @@ def test_close_gc(writable_file):
             refs = [d.id for d in f.values()]
             refs.append(refs)   # Make a reference cycle so GC is involved
             del refs  # GC is likely to fire while closing the file
+     
+
+@ut.skipIf(h5py.version.hdf5_version_tuple < (1, 13, 0), 'Requires HDF5 1.13.0 or later')
+class TestAsync(TestCase):
+    def setUp(self):
+        from h5py import Eventset
+        from h5py import File_async
+        import sys
+        self.wait_forever = sys.maxsize
+        self.es_id = Eventset()
+        self.fname = self.mktemp()
+
+    def tearDown(self):
+        if self.es_id:
+            self.es_id.wait(self.wait_forever)    
+            assert self.es_id.num_in_progress==0
+            assert self.es_id.op_failed==False
+            self.es_id.close()
+        
+    def test_create_async(self):
+        from h5py import File_async
+        """ Mode 'w' opens file in overwrite mode to test H5Fcreate_async"""
+        fid = File_async(self.mktemp(), 'w', es=self.es_id)
+        self.assertTrue(fid)
+        fid.create_group_async('foo', es=self.es_id)
+        fid.close()
+        self.es_id.wait(self.wait_forever)
+        assert self.es_id.num_in_progress==0
+        assert self.es_id.op_failed==False
+        
+        fid = File_async(self.mktemp(), 'w', es=self.es_id)
+        self.assertNotIn('foo', fid)
+        fid.close()
+
+
+    def test_open_async(self):
+        from h5py import File_async
+        """ Mode 'r' opens file in readonly mode to test H5Fopen_async"""
+        fid = File_async(self.fname, 'w', es=self.es_id)
+        
+        fid.close()
+        self.es_id.wait(self.wait_forever)
+        assert self.es_id.num_in_progress==0
+        assert self.es_id.op_failed==False
+        self.assertFalse(fid)
+        fid = File_async(self.fname, 'r', es=self.es_id)
+        self.assertTrue(fid)
+        with self.assertRaises(ValueError):
+            fid.create_group_async('foo', es=self.es_id)
+        
+        fid.close()
+        
+    
+    def test_flush_async(self):
+        from h5py import File_async
+        """ Flush via .flush_async method """
+        fid = File_async(self.mktemp(), 'w', es=self.es_id)
+        fid.flush_async()
+        self.es_id.wait(self.wait_forever)    
+        assert self.es_id.num_in_progress==0
+        assert self.es_id.op_failed==False
+        fid.close()     

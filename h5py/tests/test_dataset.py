@@ -1875,3 +1875,115 @@ class TestVirtualPrefix(BaseDataset):
         self.assertEqual(virtual_prefix, virtual_prefix_readback)
         self.assertIsInstance(dset, Dataset)
         self.assertEqual(dset.shape, (10, 3))
+
+
+@ut.skipIf(version.hdf5_version_tuple < (1, 13, 0), 'Requires HDF5 1.13.0 or later')
+class TestAsync(BaseDataset):
+    def setUp(self):
+        import sys
+        from h5py import Eventset
+        from h5py import File_async
+        self.wait_forever = sys.maxsize
+        self.es_id = Eventset()
+        self.f = File_async(self.mktemp(), 'w', es=self.es_id)
+
+    def tearDown(self):
+        if self.f:
+            self.f.close()
+            self.es_id.wait(self.wait_forever)
+            self.assertEqual(self.es_id.num_in_progress, 0)
+            self.assertEqual(self.es_id.op_failed, False)
+        if self.es_id:
+            self.es_id.close()
+
+    def test_create_dataset_async(self):
+        dset = self.f.create_dataset_async("dset", (20, 30), es=self.es_id)
+
+    def test_write_direct_async(self):
+        data_write = np.arange(100, dtype=int)
+        dset = self.f.create_dataset_async("dset", (10, 10), dtype=int, es=self.es_id)
+        dset.write_direct_async(data_write.reshape(10, 10), es=self.es_id)
+        
+        self.es_id.wait(self.wait_forever)
+        assert self.es_id.num_in_progress==0
+        assert self.es_id.op_failed==False
+        
+        out = dset[...]
+        self.assertArrayEqual(out.reshape(10, 10), data_write.reshape(10, 10))
+
+    def test_read_direct_async(self):
+        #some problem remains, now it's using the sync function
+        data_read = np.empty(100, dtype=int)
+        data = np.arange(100, dtype=int)
+        dset = self.f.create_dataset_async("dset", (10, 10), data=data.reshape(10, 10), es=self.es_id)
+        dset.read_direct_async(data_read.reshape(10, 10), es=self.es_id)
+        
+        self.es_id.wait(self.wait_forever)
+        assert self.es_id.num_in_progress==0
+        assert self.es_id.op_failed==False
+        
+        self.assertArrayEqual(data.reshape(10, 10), data_read.reshape(10, 10))
+
+    def test_data_change_async(self):     
+        data0_write = np.arange(20 * 30, dtype=int)
+        data1_write = np.arange(20 * 30, dtype=int)
+        data1_write *= 2
+
+        data0_read = np.empty(20 * 30, dtype=int)
+        data1_read = np.empty(20 * 30, dtype=int)
+        dset0 = self.f.create_dataset_async("dset0", (20, 30), dtype=int, es=self.es_id)
+        dset1 = self.f.create_dataset_async("dset1", (20, 30), dtype=int, es=self.es_id)
+        # W0, R0, W1, R1, W1', W0', R0', R1'
+        dset0.write_direct_async(data0_write.reshape(20, 30), es=self.es_id)
+        dset0.read_direct_async(data0_read.reshape(20, 30), es=self.es_id)
+        #Verify data
+        self.es_id.wait(self.wait_forever)    
+        assert self.es_id.num_in_progress==0
+        assert self.es_id.op_failed==False
+        self.assertArrayEqual(data0_write, data0_read)
+        dset1.write_direct_async(data1_write.reshape(20, 30), es=self.es_id)
+        dset1.read_direct_async(data1_read.reshape(20, 30), es=self.es_id)
+        # Verify data
+        self.es_id.wait(self.wait_forever)    
+        assert self.es_id.num_in_progress==0
+        assert self.es_id.op_failed==False
+        self.assertArrayEqual(data1_write, data1_read)
+        
+        # Change data 0 and 1
+        data0_write *= -1
+        data1_write *= -1
+        dset0.write_direct_async(data0_write.reshape(20, 30), es=self.es_id)
+        dset0.read_direct_async(data0_read.reshape(20, 30), es=self.es_id)
+        
+        #Verify data
+        self.es_id.wait(self.wait_forever)    
+        assert self.es_id.num_in_progress==0
+        assert self.es_id.op_failed==False
+        self.assertArrayEqual(data0_write, data0_read)
+        dset1.write_direct_async(data1_write.reshape(20, 30), es=self.es_id)
+        dset1.read_direct_async(data1_read.reshape(20, 30), es=self.es_id)
+        # Verify data
+        self.es_id.wait(self.wait_forever)    
+        assert self.es_id.num_in_progress==0
+        assert self.es_id.op_failed==False
+        self.assertArrayEqual(data1_write, data1_read)
+        
+    def test_resize_async(self):
+        dset = self.f.create_dataset_async('foo', (20, 30), maxshape=(20, 60), es=self.es_id)
+        
+        self.es_id.wait(self.wait_forever)    
+        assert self.es_id.num_in_progress==0
+        assert self.es_id.op_failed==False
+        self.assertEqual(dset.shape, (20, 30))
+        
+        dset.resize_async((20, 50), es=self.es_id)
+        self.es_id.wait(self.wait_forever)    
+        assert self.es_id.num_in_progress==0
+        assert self.es_id.op_failed==False
+        self.assertEqual(dset.shape, (20, 50))
+        
+        dset.resize_async((20, 60), es=self.es_id)
+        self.es_id.wait(self.wait_forever)    
+        assert self.es_id.num_in_progress==0
+        assert self.es_id.op_failed==False
+        self.assertEqual(dset.shape, (20, 60))
